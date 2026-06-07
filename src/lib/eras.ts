@@ -14,6 +14,7 @@ export function toEraDTO(row: EraRow): EraDTO {
     title: row.title,
     slug: row.slug,
     descriptionMd: row.descriptionMd,
+    descriptionHtml: row.descriptionHtml,
     startDate: row.startDate,
     startPrecision: row.startPrecision,
     endDate: row.endDate,

@@ -17,10 +17,11 @@ import {
   toPostDTO,
   updatePost,
 } from "~/lib/posts.ts";
+import { attachMediaFromUrl } from "~/lib/media.ts";
 
 type UserRow = typeof users.$inferSelect;
 
-export const MCP_SERVER_INFO = { name: "taimline", version: "0.5.0" };
+export const MCP_SERVER_INFO = { name: "taimline", version: "0.6.0" };
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpTool {
@@ -160,6 +161,22 @@ export const MCP_TOOLS: McpTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "attach_media_by_url",
+    description:
+      "Attach an image or video to a moment (post) by URL. The file is fetched and stored in the user's media bucket. Max 50 MB.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        postId: { type: "string", description: "Id of the moment to attach to." },
+        url: { type: "string", description: "Public URL of the image/video." },
+        alt: { type: "string", description: "Alt text (optional)." },
+        caption: { type: "string", description: "Caption (optional)." },
+      },
+      required: ["postId", "url"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export interface ToolResult {
@@ -173,7 +190,7 @@ const err = (message: string): ToolResult => ({ text: message, isError: true });
 type Args = Record<string, unknown>;
 
 /** Execute a tool on behalf of `user`. Never throws; returns isError instead. */
-export function callTool(user: UserRow, name: string, args: Args): ToolResult {
+export async function callTool(user: UserRow, name: string, args: Args): Promise<ToolResult> {
   switch (name) {
     case "get_profile":
       return ok({
@@ -243,6 +260,19 @@ export function callTool(user: UserRow, name: string, args: Args): ToolResult {
       if (!existing) return err(`Post not found: ${id}`);
       deletePost(existing.id);
       return ok({ deleted: toPostDTO(existing).id });
+    }
+
+    case "attach_media_by_url": {
+      const postId = typeof args.postId === "string" ? args.postId : "";
+      const url = typeof args.url === "string" ? args.url : "";
+      if (!postId || !url) return err("postId and url are required.");
+      const r = await attachMediaFromUrl(user.id, {
+        postId,
+        url,
+        alt: typeof args.alt === "string" ? args.alt : null,
+        caption: typeof args.caption === "string" ? args.caption : null,
+      });
+      return r.ok ? ok({ media: r.media }) : err(r.error);
     }
 
     default:

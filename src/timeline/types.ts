@@ -6,6 +6,7 @@ export interface EraDTO {
   title: string;
   slug: string;
   descriptionMd: string | null;
+  descriptionHtml: string | null;
   startDate: string;
   startPrecision: Precision;
   endDate: string | null;

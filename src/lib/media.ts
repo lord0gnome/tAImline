@@ -3,7 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "~/db/client.ts";
 import { media } from "~/db/schema.ts";
 import { getOwnedPost } from "~/lib/posts.ts";
-import { deleteObject } from "~/storage/s3.ts";
+import { deleteObject, putObject, storageConfigured } from "~/storage/s3.ts";
 
 type MediaRow = typeof media.$inferSelect;
 
@@ -113,4 +113,56 @@ export async function deleteMedia(row: MediaRow): Promise<void> {
 export function newObjectKey(userId: string, ext: string): string {
   const clean = ext.replace(/[^a-z0-9]/gi, "").slice(0, 5).toLowerCase() || "bin";
   return `u/${userId}/${randomUUID()}.${clean}`;
+}
+
+const EXT_BY_MIME: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
+};
+
+const MAX_FETCH_BYTES = 50 * 1024 * 1024; // 50 MB
+
+/**
+ * Fetch an external image/video URL, store it in the bucket, and register it.
+ * Used by the MCP attach-by-URL tool. No thumbnail is generated (server-side
+ * transcoding is intentionally avoided); thumbUrl falls back to the original.
+ */
+export async function attachMediaFromUrl(
+  userId: string,
+  input: { postId: string; url: string; alt?: string | null; caption?: string | null },
+): Promise<{ ok: true; media: MediaDTO } | { ok: false; error: string }> {
+  if (!storageConfigured()) return { ok: false, error: "Media storage is not configured." };
+  if (!getOwnedPost(userId, input.postId)) {
+    return { ok: false, error: `Post not found: ${input.postId}` };
+  }
+  let res: Response;
+  try {
+    res = await fetch(input.url);
+  } catch {
+    return { ok: false, error: `Could not fetch URL: ${input.url}` };
+  }
+  if (!res.ok) return { ok: false, error: `Fetch failed (${res.status}) for ${input.url}` };
+
+  const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+  if (!mime.startsWith("image/") && !mime.startsWith("video/")) {
+    return { ok: false, error: `Unsupported content-type: ${mime || "unknown"}` };
+  }
+  const ab = await res.arrayBuffer();
+  if (ab.byteLength > MAX_FETCH_BYTES) {
+    return { ok: false, error: "File exceeds the 50 MB limit." };
+  }
+
+  const key = newObjectKey(userId, EXT_BY_MIME[mime] ?? mime.split("/")[1] ?? "bin");
+  try {
+    await putObject(key, new Blob([ab], { type: mime }), mime);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
+  }
+  return registerMedia(userId, { postId: input.postId, storageKey: key, mime });
 }

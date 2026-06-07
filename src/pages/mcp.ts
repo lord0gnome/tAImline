@@ -26,7 +26,7 @@ const fail = (id: RpcMessage["id"], code: number, message: string) => ({
 });
 
 /** Handle one JSON-RPC message. Returns a response, or null for notifications. */
-function handle(user: UserRow, msg: RpcMessage): object | null {
+async function handle(user: UserRow, msg: RpcMessage): Promise<object | null> {
   const { id, method, params } = msg;
   const isNotification = id === undefined;
 
@@ -55,7 +55,7 @@ function handle(user: UserRow, msg: RpcMessage): object | null {
         params?.arguments && typeof params.arguments === "object"
           ? (params.arguments as Record<string, unknown>)
           : {};
-      const r = callTool(user, name, args);
+      const r = await callTool(user, name, args);
       return ok(id, {
         content: [{ type: "text", text: r.text }],
         isError: r.isError ?? false,
@@ -88,9 +88,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
   }
 
   const messages = Array.isArray(body) ? (body as RpcMessage[]) : [body as RpcMessage];
-  const responses = messages
-    .map((m) => handle(locals.user!, m))
-    .filter((r): r is object => r !== null);
+  const settled = await Promise.all(messages.map((m) => handle(locals.user!, m)));
+  const responses = settled.filter((r): r is object => r !== null);
 
   // Notifications-only batch → 202 with no body (per the Streamable HTTP spec).
   if (responses.length === 0) return new Response(null, { status: 202 });

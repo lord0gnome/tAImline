@@ -9,6 +9,7 @@ import {
 } from "solid-js";
 import { formatByPrecision, formatSpan, MS_DAY, msToISO, toMs } from "~/lib/dates.ts";
 import EraEditor from "./EraEditor.tsx";
+import EraDetail from "./EraDetail.tsx";
 import PostEditor from "./PostEditor.tsx";
 import { packLanes } from "./layout.ts";
 import { generateTicks } from "./ruler.ts";
@@ -37,12 +38,25 @@ const Timeline: Component<Props> = (props) => {
   const [width, setWidth] = createSignal(800);
   const [editing, setEditing] = createSignal<EraDTO | "new" | null>(null);
   const [editingPost, setEditingPost] = createSignal<PostDTO | "new" | null>(null);
+  const [detailEra, setDetailEra] = createSignal<EraDTO | null>(null);
+  const [newPostEraId, setNewPostEraId] = createSignal<string | null>(null);
+  const [focus, setFocus] = createSignal<Set<string>>(new Set());
   const [loaded, setLoaded] = createSignal(false);
 
   let containerRef: HTMLDivElement | undefined;
   const nowMs = Date.now();
 
   const endMsOf = (e: EraDTO) => (e.endDate ? toMs(e.endDate) : nowMs);
+  const overlaps = (a: EraDTO, b: EraDTO) =>
+    toMs(a.startDate) < endMsOf(b) && toMs(b.startDate) < endMsOf(a);
+
+  // Focus/solo view: show the focused eras plus any era overlapping them
+  // (context), so overlapping chapters read together.
+  function computeShown(list: EraDTO[], f: Set<string>): EraDTO[] {
+    if (f.size === 0) return list;
+    const focused = list.filter((e) => f.has(e.id));
+    return list.filter((e) => f.has(e.id) || focused.some((g) => overlaps(e, g)));
+  }
 
   // Initial framing: span all eras (or birth→now, or last ~30y) with padding.
   function frame(list: EraDTO[], w: number): Viewport {
@@ -80,9 +94,17 @@ const Timeline: Component<Props> = (props) => {
     void load();
   });
 
-  // Lane assignment over all eras (ongoing eras end "now").
+  // Eras/posts currently on screen (all, or the focused subset).
+  const shownEras = createMemo(() => computeShown(eras(), focus()));
+  const shownPosts = createMemo(() => {
+    if (focus().size === 0) return posts();
+    const ids = new Set(shownEras().map((e) => e.id));
+    return posts().filter((p) => p.eraId && ids.has(p.eraId));
+  });
+
+  // Lane assignment over the shown eras (ongoing eras end "now").
   const lanes = createMemo(() =>
-    packLanes(eras().map((e) => ({ id: e.id, startMs: toMs(e.startDate), endMs: endMsOf(e) }))),
+    packLanes(shownEras().map((e) => ({ id: e.id, startMs: toMs(e.startDate), endMs: endMsOf(e) }))),
   );
 
   const ticks = createMemo(() => {
@@ -94,7 +116,7 @@ const Timeline: Component<Props> = (props) => {
   const visibleEras = createMemo(() => {
     const w = width();
     const v = vp();
-    return eras().filter((e) => {
+    return shownEras().filter((e) => {
       const x1 = dateToX(toMs(e.startDate), v);
       const x2 = dateToX(endMsOf(e), v);
       return x2 >= -50 && x1 <= w + 50;
@@ -107,7 +129,7 @@ const Timeline: Component<Props> = (props) => {
 
   // A post is "free-floating" if it has no era or its era isn't on the timeline.
   const isFree = (p: PostDTO) => !p.eraId || lanes().lanes[p.eraId] === undefined;
-  const hasFreePosts = () => posts().some(isFree);
+  const hasFreePosts = () => shownPosts().some(isFree);
 
   const contentHeight = () => lanesBottom() + (hasFreePosts() ? POST_ROW_H : 0);
 
@@ -118,11 +140,24 @@ const Timeline: Component<Props> = (props) => {
   const visiblePosts = createMemo(() => {
     const w = width();
     const v = vp();
-    return posts().filter((p) => {
+    return shownPosts().filter((p) => {
       const x = dateToX(toMs(p.eventDate), v);
       return x >= -20 && x <= w + 20;
     });
   });
+
+  // ---- focus controls ---------------------------------------------------
+  function applyFocus(f: Set<string>) {
+    setFocus(f);
+    const shown = computeShown(eras(), f);
+    setVp(frame(shown.length ? shown : eras(), width()));
+  }
+  function toggleFocus(id: string) {
+    const f = new Set(focus());
+    f.has(id) ? f.delete(id) : f.add(id);
+    applyFocus(f);
+  }
+  const focusedEras = () => eras().filter((e) => focus().has(e.id));
 
   // ---- interaction: wheel zoom + drag pan -------------------------------
   function onWheel(ev: WheelEvent) {
@@ -165,14 +200,29 @@ const Timeline: Component<Props> = (props) => {
       copy[i] = saved;
       return copy;
     });
+    if (detailEra()?.id === saved.id) setDetailEra(saved);
     setEditing(null);
   }
   function onDeleted(id: string) {
     setEras((prev) => prev.filter((e) => e.id !== id));
     // Detach posts whose era was removed so they fall to the free strip.
     setPosts((prev) => prev.map((p) => (p.eraId === id ? { ...p, eraId: null } : p)));
+    if (focus().has(id)) {
+      const f = new Set(focus());
+      f.delete(id);
+      setFocus(f);
+    }
+    if (detailEra()?.id === id) setDetailEra(null);
     setEditing(null);
   }
+
+  // Open a fresh moment editor pre-attached to an era.
+  function addMomentTo(eraId: string | null) {
+    setNewPostEraId(eraId);
+    setDetailEra(null);
+    setEditingPost("new");
+  }
+  const postsInEra = (eraId: string) => posts().filter((p) => p.eraId === eraId);
 
   function onSavedPost(saved: PostDTO) {
     setPosts((prev) => {
@@ -197,13 +247,28 @@ const Timeline: Component<Props> = (props) => {
         <button class="btn btn--primary" onClick={() => setEditing("new")}>
           + New era
         </button>
-        <button class="btn" onClick={() => setEditingPost("new")}>
+        <button class="btn" onClick={() => addMomentTo(null)}>
           + New moment
         </button>
-        <button class="btn" onClick={() => setVp(frame(eras(), width()))}>
-          Fit all
+        <button class="btn" onClick={() => setVp(frame(shownEras(), width()))}>
+          Fit
         </button>
-        <span class="tl__hint muted">drag to pan · scroll to zoom</span>
+        <Show
+          when={focus().size > 0}
+          fallback={<span class="tl__hint muted">drag to pan · scroll to zoom · click an era to focus</span>}
+        >
+          <span class="tl__focus">
+            <span class="muted">Focusing:</span>
+            <For each={focusedEras()}>
+              {(e) => (
+                <button class="tl__chip" onClick={() => toggleFocus(e.id)} title="Remove from focus">
+                  {e.title} ✕
+                </button>
+              )}
+            </For>
+            <button class="btn" onClick={() => applyFocus(new Set())}>Show all</button>
+          </span>
+        </Show>
       </div>
 
       <div
@@ -248,8 +313,9 @@ const Timeline: Component<Props> = (props) => {
                   height: `${LANE_H}px`,
                   "--era-color": e.color ?? "var(--accent)",
                 }}
+                classList={{ "tl__era--focused": focus().has(e.id) }}
                 onPointerDown={(ev) => ev.stopPropagation()}
-                onClick={() => setEditing(e)}
+                onClick={() => setDetailEra(e)}
                 title={`${e.title} (${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)})`}
               >
                 <span class="tl__era-title">{e.title}</span>
@@ -305,7 +371,7 @@ const Timeline: Component<Props> = (props) => {
             <PostEditor
               post={editingPost() === "new" ? null : (editingPost() as PostDTO)}
               eras={eras()}
-              defaultEraId={null}
+              defaultEraId={newPostEraId()}
               defaultDate={defaultStart()}
               storageEnabled={props.storageEnabled}
               onSaved={onSavedPost}
@@ -314,6 +380,34 @@ const Timeline: Component<Props> = (props) => {
             />
           </div>
         </div>
+      </Show>
+
+      <Show when={detailEra()}>
+        {(era) => (
+          <div class="tl__drawer-backdrop" onClick={() => setDetailEra(null)}>
+            <div onClick={(ev) => ev.stopPropagation()}>
+              <EraDetail
+                era={era()}
+                posts={postsInEra(era().id)}
+                focused={focus().has(era().id)}
+                onEdit={() => {
+                  setDetailEra(null);
+                  setEditing(era());
+                }}
+                onAddMoment={() => addMomentTo(era().id)}
+                onOpenPost={(p) => {
+                  setDetailEra(null);
+                  setEditingPost(p);
+                }}
+                onToggleFocus={() => {
+                  toggleFocus(era().id);
+                  setDetailEra(null);
+                }}
+                onClose={() => setDetailEra(null)}
+              />
+            </div>
+          </div>
+        )}
       </Show>
     </div>
   );

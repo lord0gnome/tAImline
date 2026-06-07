@@ -51,6 +51,21 @@ export const presignPut = (key: string, expiresSec = 900) => presign(key, "PUT",
 /** Short-lived presigned GET URL for reads (redirected to by the media proxy). */
 export const presignGet = (key: string, expiresSec = 900) => presign(key, "GET", expiresSec);
 
+/** Server-side upload (used by attach-by-URL; browser uploads use presignPut). */
+export async function putObject(
+  key: string,
+  body: BodyInit,
+  contentType: string,
+): Promise<void> {
+  const { client } = cfg();
+  const res = await client.fetch(objectUrl(key), {
+    method: "PUT",
+    headers: { "content-type": contentType },
+    body,
+  });
+  if (!res.ok) throw new Error(`S3 PUT failed (${res.status})`);
+}
+
 export async function deleteObject(key: string): Promise<void> {
   const { client } = cfg();
   await client.fetch(objectUrl(key), { method: "DELETE" });

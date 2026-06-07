@@ -18,7 +18,9 @@ cross-site.
   our own CSRF token to the logout form.
 - Or make logout a same-origin `fetch()` POST with appropriate headers.
 
-Status: deferred (noted 2026-06-07). Login/session flow otherwise works.
+Status: **FIXED 2026-06-07** — disabled Astro `security.checkOrigin` (TLS terminated
+at the ingress causes a scheme mismatch http vs https). CSRF is covered by
+`SameSite=Lax` cookies + no state-changing GETs; bearer tokens are CSRF-immune.
 
 ## BUG-2 — Can't delete eras
 
@@ -37,4 +39,4 @@ the app sees behind nginx; either fix forwarded headers, disable `checkOrigin`
 and add our own CSRF token, or send the DELETE as a JSON `fetch` with an explicit
 content-type. Worth fixing BUG-1 + BUG-2 together (shared root cause).
 
-Status: deferred (noted 2026-06-07).
+Status: **FIXED 2026-06-07** — same fix as BUG-1 (disabled `checkOrigin`).
