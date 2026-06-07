@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "~/db/client.ts";
 import { oauthAccounts, users } from "~/db/schema.ts";
+import { claimInvites } from "~/lib/shares.ts";
 import type { GoogleClaims } from "./google.ts";
 
 type UserRow = typeof users.$inferSelect;
@@ -45,9 +46,19 @@ export function upsertGoogleUser(claims: GoogleClaims): UserRow {
     )
     .get();
 
+  const email = claims.email?.toLowerCase() ?? null;
+
   if (link) {
     const existing = db.select().from(users).where(eq(users.id, link.userId)).get();
-    if (existing) return existing;
+    if (existing) {
+      // Backfill email if newly available, then claim any pending invites.
+      if (email && existing.email !== email) {
+        db.update(users).set({ email }).where(eq(users.id, existing.id)).run();
+        existing.email = email;
+      }
+      claimInvites(existing);
+      return existing;
+    }
   }
 
   const id = randomUUID();
@@ -56,6 +67,7 @@ export function upsertGoogleUser(claims: GoogleClaims): UserRow {
     id,
     handle: generateUniqueHandle(handleBase),
     displayName: claims.name ?? claims.email?.split("@")[0] ?? "New user",
+    email,
     avatarUrl: claims.picture ?? null,
   };
 
@@ -64,5 +76,7 @@ export function upsertGoogleUser(claims: GoogleClaims): UserRow {
     .values({ provider: "google", providerUserId: claims.sub, userId: id })
     .run();
 
-  return db.select().from(users).where(eq(users.id, id)).get()!;
+  const created = db.select().from(users).where(eq(users.id, id)).get()!;
+  claimInvites(created);
+  return created;
 }

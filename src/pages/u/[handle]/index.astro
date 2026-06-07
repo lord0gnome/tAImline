@@ -1,0 +1,52 @@
+---
+import Base from "~/layouts/Base.astro";
+import Timeline from "~/timeline/Timeline.tsx";
+import { getUserByHandle } from "~/lib/shares.ts";
+import { viewableTimeline } from "~/lib/publicView.ts";
+
+const { handle } = Astro.params;
+const owner = handle ? getUserByHandle(handle) : null;
+if (!owner) return new Response("Not found", { status: 404 });
+
+const viewer = Astro.locals.user;
+const isOwner = viewer?.id === owner.id;
+const { eras, posts } = viewableTimeline(owner, viewer?.id ?? null);
+
+const empty = eras.length === 0 && posts.length === 0;
+const isPrivate = empty && !isOwner;
+---
+
+<Base
+  title={`${owner.displayName} — tAImline`}
+  description={owner.bio ?? `${owner.displayName}'s life timeline.`}
+  ogType="profile"
+  noindex={isPrivate}
+>
+  <section style="padding-block: 1.5rem;">
+    <div style="display:flex; align-items:center; gap:0.75rem;">
+      {owner.avatarUrl && <img src={owner.avatarUrl} alt="" width="48" height="48" style="border-radius:50%;" />}
+      <div>
+        <h1 style="font-size: 1.6rem; margin:0;">{owner.displayName}</h1>
+        <p class="muted" style="margin:0;">@{owner.handle}</p>
+      </div>
+    </div>
+    {owner.bio && <p class="muted" style="max-width:42rem;">{owner.bio}</p>}
+
+    {
+      isPrivate ? (
+        <p class="muted" style="padding-block:2rem;">This timeline is private.</p>
+      ) : (
+        <div style="margin-top:1rem;">
+          <Timeline
+            client:only="solid-js"
+            birthDate={owner.birthDate}
+            readOnly={true}
+            ownerHandle={owner.handle}
+            initialEras={eras}
+            initialPosts={posts}
+          />
+        </div>
+      )
+    }
+  </section>
+</Base>

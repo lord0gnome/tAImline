@@ -102,6 +102,10 @@ export function getOwnedMedia(userId: string, id: string): MediaRow | null {
   return row;
 }
 
+export function getMediaById(id: string): MediaRow | null {
+  return db.select().from(media).where(eq(media.id, id)).get() ?? null;
+}
+
 export async function deleteMedia(row: MediaRow): Promise<void> {
   // Best-effort object cleanup; always remove the DB row.
   await deleteObject(row.storageKey).catch(() => {});

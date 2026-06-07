@@ -168,6 +168,12 @@ export function getOwnedEra(userId: string, id: string): EraRow | null {
   return row;
 }
 
+export function getEraBySlug(userId: string, slug: string): EraRow | null {
+  return (
+    db.select().from(eras).where(and(eq(eras.userId, userId), eq(eras.slug, slug))).get() ?? null
+  );
+}
+
 export function updateEra(existing: EraRow, value: ParsedEra): EraDTO {
   const slug =
     value.title === existing.title

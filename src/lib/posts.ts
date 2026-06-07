@@ -169,6 +169,12 @@ export function getOwnedPost(userId: string, id: string): PostRow | null {
   return row;
 }
 
+export function getPostBySlug(userId: string, slug: string): PostRow | null {
+  return (
+    db.select().from(posts).where(and(eq(posts.userId, userId), eq(posts.slug, slug))).get() ?? null
+  );
+}
+
 export function updatePost(
   existing: PostRow,
   value: ParsedPost,

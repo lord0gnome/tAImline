@@ -1,6 +1,8 @@
 ---
 import Base from "~/layouts/Base.astro";
 import TokenManager from "~/settings/TokenManager.tsx";
+import ProfileSettings from "~/settings/ProfileSettings.tsx";
+import ShareManager from "~/settings/ShareManager.tsx";
 
 const user = Astro.locals.user;
 if (!user) return Astro.redirect("/login");
@@ -12,7 +14,28 @@ const baseUrl = import.meta.env.PUBLIC_BASE_URL ?? "http://localhost:4321";
   <section style="padding-block: 1.5rem; max-width: 48rem;">
     <h1 style="font-size: 1.75rem;">Settings</h1>
 
-    <h2 style="margin-top: 1.5rem;">API tokens</h2>
+    <h2 style="margin-top: 1.5rem;">Profile</h2>
+    <p class="muted">
+      Your public timeline lives at <a href={`/u/${user.handle}`}>/u/{user.handle}</a>.
+      Default visibility applies to eras/moments set to “inherit”.
+    </p>
+    <ProfileSettings
+      client:only="solid-js"
+      handle={user.handle}
+      displayName={user.displayName}
+      bio={user.bio}
+      birthDate={user.birthDate}
+      defaultVisibility={user.defaultVisibility}
+    />
+
+    <h2 style="margin-top: 2rem;">Sharing</h2>
+    <p class="muted">
+      Grant specific people access to <strong>gated</strong> eras or your whole
+      timeline, by handle or email (email invites bind when they sign in).
+    </p>
+    <ShareManager client:only="solid-js" />
+
+    <h2 style="margin-top: 2rem;">API tokens</h2>
     <p class="muted">
       Tokens let an AI assistant build your timeline over the MCP endpoint, or
       let scripts call the API. Treat them like passwords.

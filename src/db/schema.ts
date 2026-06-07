@@ -32,6 +32,8 @@ export const users = sqliteTable(
     id: text("id").primaryKey(),
     handle: text("handle").notNull(),
     displayName: text("display_name").notNull(),
+    /** From the OAuth provider; used to claim email-invited shares. */
+    email: text("email"),
     avatarUrl: text("avatar_url"),
     bio: text("bio"),
     /** Timeline anchor (ISO date string), nullable. */

@@ -1,5 +1,8 @@
 ---
 import Base from "~/layouts/Base.astro";
+import { listPublicProfiles } from "~/lib/publicView.ts";
+
+const profiles = listPublicProfiles();
 ---
 
 <Base>
@@ -21,7 +24,23 @@ import Base from "~/layouts/Base.astro";
   </section>
 
   <section style="padding-bottom: 4rem;">
-    <h2>Coming together</h2>
-    <p class="muted">Explore of public timelines will appear here.</p>
+    <h2>Explore public timelines</h2>
+    {
+      profiles.length === 0 ? (
+        <p class="muted">No public timelines yet — be the first to share yours.</p>
+      ) : (
+        <div class="explore">
+          {profiles.map((p) => (
+            <a class="card explore__card" href={`/u/${p.handle}`}>
+              {p.avatarUrl && <img src={p.avatarUrl} alt="" />}
+              <div>
+                <strong>{p.displayName}</strong>
+                <div class="muted" style="font-size:0.85rem;">@{p.handle}</div>
+              </div>
+            </a>
+          ))}
+        </div>
+      )
+    }
   </section>
 </Base>

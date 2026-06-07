@@ -1,0 +1,54 @@
+---
+import Base from "~/layouts/Base.astro";
+import { formatByPrecision, formatSpan } from "~/lib/dates.ts";
+import { getUserByHandle } from "~/lib/shares.ts";
+import { viewableEra } from "~/lib/publicView.ts";
+
+const { handle, slug } = Astro.params;
+const owner = handle ? getUserByHandle(handle) : null;
+if (!owner) return new Response("Not found", { status: 404 });
+
+const result = slug ? viewableEra(owner, slug, Astro.locals.user?.id ?? null) : null;
+if (!result) return new Response("Not found", { status: 404 });
+const { era, posts } = result;
+
+const isPublic = era.visibility === "public" || era.visibility === "unlisted";
+---
+
+<Base
+  title={`${era.title} — ${owner.displayName}`}
+  description={era.descriptionMd?.slice(0, 160) ?? `An era from ${owner.displayName}'s timeline.`}
+  ogType="article"
+  noindex={!isPublic}
+>
+  <article style="padding-block: 1.5rem; max-width: 44rem;">
+    <p class="muted" style="margin:0;">
+      <a href={`/u/${owner.handle}`}>{owner.displayName}</a> ·
+      {formatSpan(era.startDate, era.startPrecision, era.endDate, era.endPrecision)}
+      {era.category && <> · {era.category}</>}
+    </p>
+    <h1 style="font-size: 2rem; border-left: 4px solid {era.color ?? 'var(--accent)'}; padding-left: 0.6rem;">
+      {era.title}
+    </h1>
+
+    {era.descriptionHtml && <div class="era-detail__body" set:html={era.descriptionHtml} />}
+
+    <h2 style="margin-top:2rem; font-size:1.2rem;">Moments</h2>
+    {
+      posts.length === 0 ? (
+        <p class="muted">No moments to show.</p>
+      ) : (
+        <ul style="list-style:none; padding:0;">
+          {posts.map((p) => (
+            <li style="border-top:1px solid var(--border); padding:0.6rem 0;">
+              <a href={`/u/${owner.handle}/post/${p.slug}`} style="font-weight:600;">{p.title}</a>
+              <span class="muted" style="margin-left:0.5rem; font-size:0.85rem;">
+                {formatByPrecision(p.eventDate, p.eventPrecision)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </article>
+</Base>

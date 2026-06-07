@@ -1,0 +1,58 @@
+---
+import Base from "~/layouts/Base.astro";
+import { formatByPrecision } from "~/lib/dates.ts";
+import { getUserByHandle } from "~/lib/shares.ts";
+import { viewablePost } from "~/lib/publicView.ts";
+import { db } from "~/db/client.ts";
+import { eras as erasTable } from "~/db/schema.ts";
+import { eq } from "drizzle-orm";
+
+const { handle, slug } = Astro.params;
+const owner = handle ? getUserByHandle(handle) : null;
+if (!owner) return new Response("Not found", { status: 404 });
+
+const result = slug ? viewablePost(owner, slug, Astro.locals.user?.id ?? null) : null;
+if (!result) return new Response("Not found", { status: 404 });
+const { post, media } = result;
+
+// Link back to the containing era, if any.
+const era = post.eraId
+  ? db.select({ slug: erasTable.slug, title: erasTable.title }).from(erasTable).where(eq(erasTable.id, post.eraId)).get()
+  : null;
+
+const isPublic = post.visibility === "public" || post.visibility === "unlisted";
+const firstImage = media.find((m) => m.kind === "image");
+---
+
+<Base
+  title={`${post.title} — ${owner.displayName}`}
+  description={post.bodyMd?.slice(0, 160) ?? `A moment from ${owner.displayName}'s timeline.`}
+  ogType="article"
+  ogImage={firstImage?.url}
+  noindex={!isPublic}
+>
+  <article style="padding-block: 1.5rem; max-width: 44rem;">
+    <p class="muted" style="margin:0;">
+      <a href={`/u/${owner.handle}`}>{owner.displayName}</a> ·
+      {formatByPrecision(post.eventDate, post.eventPrecision)}
+      {era && <> · <a href={`/u/${owner.handle}/era/${era.slug}`}>{era.title}</a></>}
+    </p>
+    <h1 style="font-size: 2rem;">{post.title}</h1>
+
+    {post.bodyHtml && <div class="era-detail__body" set:html={post.bodyHtml} />}
+
+    {
+      media.length > 0 && (
+        <div class="post-media">
+          {media.map((m) =>
+            m.kind === "video" ? (
+              <video src={m.url} controls preload="metadata" />
+            ) : (
+              <img src={m.url} alt={m.alt ?? ""} loading="lazy" />
+            ),
+          )}
+        </div>
+      )
+    }
+  </article>
+</Base>

@@ -18,7 +18,12 @@ import type { EraDTO, PostDTO } from "./types.ts";
 
 interface Props {
   birthDate: string | null;
-  storageEnabled: boolean;
+  storageEnabled?: boolean;
+  /** Read-only public view: no editing, data passed in, markers link out. */
+  readOnly?: boolean;
+  ownerHandle?: string;
+  initialEras?: EraDTO[];
+  initialPosts?: PostDTO[];
 }
 
 const RULER_H = 34;
@@ -91,8 +96,24 @@ const Timeline: Component<Props> = (props) => {
     const onResize = () => containerRef && setWidth(containerRef.clientWidth);
     window.addEventListener("resize", onResize);
     onCleanup(() => window.removeEventListener("resize", onResize));
-    void load();
+    if (props.readOnly) {
+      // Public view: data is provided; no API fetch.
+      setEras(props.initialEras ?? []);
+      setPosts(props.initialPosts ?? []);
+      setVp(frame(props.initialEras ?? [], width()));
+      setLoaded(true);
+    } else {
+      void load();
+    }
   });
+
+  function openPost(p: PostDTO) {
+    if (props.readOnly) {
+      if (props.ownerHandle) location.href = `/u/${props.ownerHandle}/post/${p.slug}`;
+    } else {
+      setEditingPost(p);
+    }
+  }
 
   // Eras/posts currently on screen (all, or the focused subset).
   const shownEras = createMemo(() => computeShown(eras(), focus()));
@@ -244,12 +265,14 @@ const Timeline: Component<Props> = (props) => {
   return (
     <div class="tl">
       <div class="tl__toolbar">
-        <button class="btn btn--primary" onClick={() => setEditing("new")}>
-          + New era
-        </button>
-        <button class="btn" onClick={() => addMomentTo(null)}>
-          + New moment
-        </button>
+        <Show when={!props.readOnly}>
+          <button class="btn btn--primary" onClick={() => setEditing("new")}>
+            + New era
+          </button>
+          <button class="btn" onClick={() => addMomentTo(null)}>
+            + New moment
+          </button>
+        </Show>
         <button class="btn" onClick={() => setVp(frame(shownEras(), width()))}>
           Fit
         </button>
@@ -337,7 +360,7 @@ const Timeline: Component<Props> = (props) => {
                 top: `${postTop(p)}px`,
               }}
               onPointerDown={(ev) => ev.stopPropagation()}
-              onClick={() => setEditingPost(p)}
+              onClick={() => openPost(p)}
               title={`${p.title} — ${formatByPrecision(p.eventDate, p.eventPrecision)}`}
             >
               <span class="tl__marker-dot" />
@@ -373,7 +396,7 @@ const Timeline: Component<Props> = (props) => {
               eras={eras()}
               defaultEraId={newPostEraId()}
               defaultDate={defaultStart()}
-              storageEnabled={props.storageEnabled}
+              storageEnabled={props.storageEnabled ?? false}
               onSaved={onSavedPost}
               onDeleted={onDeletedPost}
               onCancel={() => setEditingPost(null)}
@@ -390,6 +413,7 @@ const Timeline: Component<Props> = (props) => {
                 era={era()}
                 posts={postsInEra(era().id)}
                 focused={focus().has(era().id)}
+                readOnly={props.readOnly ?? false}
                 onEdit={() => {
                   setDetailEra(null);
                   setEditing(era());
@@ -397,7 +421,7 @@ const Timeline: Component<Props> = (props) => {
                 onAddMoment={() => addMomentTo(era().id)}
                 onOpenPost={(p) => {
                   setDetailEra(null);
-                  setEditingPost(p);
+                  openPost(p);
                 }}
                 onToggleFocus={() => {
                   toggleFocus(era().id);

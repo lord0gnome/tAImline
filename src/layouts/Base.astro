@@ -4,14 +4,23 @@ import "~/styles/global.css";
 interface Props {
   title?: string;
   description?: string;
+  ogImage?: string;
+  ogType?: string;
+  noindex?: boolean;
 }
 
 const {
   title = "tAImline",
   description = "A zoomable timeline of your life, organized into eras.",
+  ogImage,
+  ogType = "website",
+  noindex = false,
 } = Astro.props;
 
 const user = Astro.locals.user;
+const base = import.meta.env.PUBLIC_BASE_URL ?? "";
+const canonical = base ? new URL(Astro.url.pathname, base).toString() : Astro.url.pathname;
+const absImage = ogImage && base && ogImage.startsWith("/") ? `${base}${ogImage}` : ogImage;
 ---
 
 <!doctype html>
@@ -21,6 +30,14 @@ const user = Astro.locals.user;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:url" content={canonical} />
+    {absImage && <meta property="og:image" content={absImage} />}
+    <meta name="twitter:card" content={absImage ? "summary_large_image" : "summary"} />
     <title>{title}</title>
   </head>
   <body>

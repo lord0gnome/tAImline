@@ -6,6 +6,7 @@ interface Props {
   era: EraDTO;
   posts: PostDTO[]; // posts belonging to this era
   focused: boolean;
+  readOnly?: boolean;
   onEdit: () => void;
   onAddMoment: () => void;
   onOpenPost: (p: PostDTO) => void;
@@ -39,7 +40,9 @@ const EraDetail: Component<Props> = (props) => {
       <div class="era-detail__moments">
         <div class="era-detail__moments-head">
           <strong>Moments</strong>
-          <button class="btn" onClick={props.onAddMoment}>+ Add moment</button>
+          <Show when={!props.readOnly}>
+            <button class="btn" onClick={props.onAddMoment}>+ Add moment</button>
+          </Show>
         </div>
         <For
           each={props.posts}
@@ -60,7 +63,9 @@ const EraDetail: Component<Props> = (props) => {
         <button class="btn btn--primary" onClick={props.onToggleFocus}>
           {props.focused ? "Remove from focus" : "Focus this era"}
         </button>
-        <button class="btn" onClick={props.onEdit}>Edit</button>
+        <Show when={!props.readOnly}>
+          <button class="btn" onClick={props.onEdit}>Edit</button>
+        </Show>
         <button class="btn" onClick={props.onClose} style={{ "margin-left": "auto" }}>Close</button>
       </div>
     </aside>
