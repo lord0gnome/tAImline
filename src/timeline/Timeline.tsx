@@ -7,12 +7,13 @@ import {
   onMount,
   Show,
 } from "solid-js";
-import { formatSpan, MS_DAY, msToISO, toMs } from "~/lib/dates.ts";
+import { formatByPrecision, formatSpan, MS_DAY, msToISO, toMs } from "~/lib/dates.ts";
 import EraEditor from "./EraEditor.tsx";
+import PostEditor from "./PostEditor.tsx";
 import { packLanes } from "./layout.ts";
 import { generateTicks } from "./ruler.ts";
 import { dateToX, fitRange, type Viewport, visibleRange, xToDate, zoomAt } from "./scale.ts";
-import type { EraDTO } from "./types.ts";
+import type { EraDTO, PostDTO } from "./types.ts";
 
 interface Props {
   birthDate: string | null;
@@ -22,6 +23,7 @@ const RULER_H = 34;
 const LANE_H = 46;
 const LANE_GAP = 8;
 const MIN_BAR_PX = 8;
+const POST_ROW_H = 30; // free-floating posts strip at the bottom
 const PX_PER_MS_MIN = 5 / (3650 * MS_DAY); // ~5px per decade (max zoom-out)
 const PX_PER_MS_MAX = 200 / MS_DAY; // 200px per day (max zoom-in)
 
@@ -29,9 +31,11 @@ const clampZoom = (v: number) => Math.min(PX_PER_MS_MAX, Math.max(PX_PER_MS_MIN,
 
 const Timeline: Component<Props> = (props) => {
   const [eras, setEras] = createSignal<EraDTO[]>([]);
+  const [posts, setPosts] = createSignal<PostDTO[]>([]);
   const [vp, setVp] = createSignal<Viewport>({ originMs: Date.now(), pxPerMs: 1 });
   const [width, setWidth] = createSignal(800);
   const [editing, setEditing] = createSignal<EraDTO | "new" | null>(null);
+  const [editingPost, setEditingPost] = createSignal<PostDTO | "new" | null>(null);
   const [loaded, setLoaded] = createSignal(false);
 
   let containerRef: HTMLDivElement | undefined;
@@ -58,10 +62,11 @@ const Timeline: Component<Props> = (props) => {
   }
 
   async function load() {
-    const res = await fetch("/api/eras");
-    const data = res.ok ? await res.json() : { eras: [] };
+    const res = await fetch("/api/timeline");
+    const data = res.ok ? await res.json() : { eras: [], posts: [] };
     const list: EraDTO[] = data.eras ?? [];
     setEras(list);
+    setPosts(data.posts ?? []);
     if (!loaded()) setVp(frame(list, width()));
     setLoaded(true);
   }
@@ -95,7 +100,28 @@ const Timeline: Component<Props> = (props) => {
     });
   });
 
-  const contentHeight = () => RULER_H + lanes().laneCount * (LANE_H + LANE_GAP) + LANE_GAP;
+  const laneTop = (eraId: string) =>
+    RULER_H + LANE_GAP + lanes().lanes[eraId] * (LANE_H + LANE_GAP);
+  const lanesBottom = () => RULER_H + lanes().laneCount * (LANE_H + LANE_GAP) + LANE_GAP;
+
+  // A post is "free-floating" if it has no era or its era isn't on the timeline.
+  const isFree = (p: PostDTO) => !p.eraId || lanes().lanes[p.eraId] === undefined;
+  const hasFreePosts = () => posts().some(isFree);
+
+  const contentHeight = () => lanesBottom() + (hasFreePosts() ? POST_ROW_H : 0);
+
+  // Marker vertical position: a pin atop its era's bar, or the free strip.
+  const postTop = (p: PostDTO) => (isFree(p) ? lanesBottom() + 4 : laneTop(p.eraId!) + 4);
+
+  // Virtualized set of posts whose marker is within the viewport.
+  const visiblePosts = createMemo(() => {
+    const w = width();
+    const v = vp();
+    return posts().filter((p) => {
+      const x = dateToX(toMs(p.eventDate), v);
+      return x >= -20 && x <= w + 20;
+    });
+  });
 
   // ---- interaction: wheel zoom + drag pan -------------------------------
   function onWheel(ev: WheelEvent) {
@@ -142,7 +168,24 @@ const Timeline: Component<Props> = (props) => {
   }
   function onDeleted(id: string) {
     setEras((prev) => prev.filter((e) => e.id !== id));
+    // Detach posts whose era was removed so they fall to the free strip.
+    setPosts((prev) => prev.map((p) => (p.eraId === id ? { ...p, eraId: null } : p)));
     setEditing(null);
+  }
+
+  function onSavedPost(saved: PostDTO) {
+    setPosts((prev) => {
+      const i = prev.findIndex((p) => p.id === saved.id);
+      if (i === -1) return [...prev, saved];
+      const copy = [...prev];
+      copy[i] = saved;
+      return copy;
+    });
+    setEditingPost(null);
+  }
+  function onDeletedPost(id: string) {
+    setPosts((prev) => prev.filter((p) => p.id !== id));
+    setEditingPost(null);
   }
 
   const todayX = () => dateToX(nowMs, vp());
@@ -152,6 +195,9 @@ const Timeline: Component<Props> = (props) => {
       <div class="tl__toolbar">
         <button class="btn btn--primary" onClick={() => setEditing("new")}>
           + New era
+        </button>
+        <button class="btn" onClick={() => setEditingPost("new")}>
+          + New moment
         </button>
         <button class="btn" onClick={() => setVp(frame(eras(), width()))}>
           Fit all
@@ -214,7 +260,26 @@ const Timeline: Component<Props> = (props) => {
           }}
         </For>
 
-        <Show when={loaded() && eras().length === 0}>
+        {/* post markers */}
+        <For each={visiblePosts()}>
+          {(p) => (
+            <button
+              class="tl__marker"
+              style={{
+                transform: `translateX(${dateToX(toMs(p.eventDate), vp())}px)`,
+                top: `${postTop(p)}px`,
+              }}
+              onPointerDown={(ev) => ev.stopPropagation()}
+              onClick={() => setEditingPost(p)}
+              title={`${p.title} — ${formatByPrecision(p.eventDate, p.eventPrecision)}`}
+            >
+              <span class="tl__marker-dot" />
+              <span class="tl__marker-label">{p.title}</span>
+            </button>
+          )}
+        </For>
+
+        <Show when={loaded() && eras().length === 0 && posts().length === 0}>
           <p class="tl__empty muted">No eras yet — add the first chapter of your life.</p>
         </Show>
       </div>
@@ -228,6 +293,22 @@ const Timeline: Component<Props> = (props) => {
               onSaved={onSaved}
               onDeleted={onDeleted}
               onCancel={() => setEditing(null)}
+            />
+          </div>
+        </div>
+      </Show>
+
+      <Show when={editingPost()}>
+        <div class="tl__drawer-backdrop" onClick={() => setEditingPost(null)}>
+          <div onClick={(ev) => ev.stopPropagation()}>
+            <PostEditor
+              post={editingPost() === "new" ? null : (editingPost() as PostDTO)}
+              eras={eras()}
+              defaultEraId={null}
+              defaultDate={defaultStart()}
+              onSaved={onSavedPost}
+              onDeleted={onDeletedPost}
+              onCancel={() => setEditingPost(null)}
             />
           </div>
         </div>

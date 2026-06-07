@@ -15,9 +15,24 @@ export interface EraDTO {
   visibility: EraVisibility;
 }
 
-/** Response of GET /api/timeline. Posts arrive in M3. */
+/** A moment pinned to a date, optionally attached to an era. */
+export interface PostDTO {
+  id: string;
+  eraId: string | null;
+  title: string;
+  slug: string;
+  bodyMd: string | null;
+  bodyHtml: string | null;
+  eventDate: string;
+  eventPrecision: Precision;
+  eventEndDate: string | null;
+  visibility: EraVisibility;
+}
+
+/** Response of GET /api/timeline. */
 export interface TimelineData {
   eras: EraDTO[];
+  posts: PostDTO[];
 }
 
 /** Curated palette offered in the era editor. */

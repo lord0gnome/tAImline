@@ -264,6 +264,43 @@ a:hover {
   transform: translate(-50%, -50%);
 }
 
+.tl__marker {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px 0 0;
+  margin-left: -6px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text);
+  will-change: transform;
+}
+.tl__marker-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--accent);
+  flex: none;
+}
+.tl__marker-label {
+  font-size: 0.72rem;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.tl__marker:hover .tl__marker-label {
+  opacity: 1;
+}
+
 /* ---- era editor drawer ---- */
 .tl__drawer-backdrop {
   position: fixed;

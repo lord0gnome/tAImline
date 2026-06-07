@@ -8,10 +8,19 @@ import {
   toEraDTO,
   updateEra,
 } from "~/lib/eras.ts";
+import {
+  createPost,
+  deletePost,
+  getOwnedPost,
+  listPostsForUser,
+  parsePost,
+  toPostDTO,
+  updatePost,
+} from "~/lib/posts.ts";
 
 type UserRow = typeof users.$inferSelect;
 
-export const MCP_SERVER_INFO = { name: "taimline", version: "0.3.0" };
+export const MCP_SERVER_INFO = { name: "taimline", version: "0.4.0" };
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpTool {
@@ -39,6 +48,22 @@ const eraProps = {
   category: { type: "string", description: "Optional grouping, e.g. 'Career'." },
   visibility,
   descriptionMd: { type: "string", description: "Markdown description / notes." },
+};
+
+const postProps = {
+  title: { type: "string", description: "Moment title." },
+  bodyMd: { type: "string", description: "Markdown story / body." },
+  eraId: {
+    type: ["string", "null"],
+    description: "Id of the era this belongs to, or null/omitted if free-floating.",
+  },
+  eventDate: { type: "string", description: "Date of the moment as YYYY-MM-DD." },
+  eventPrecision: { ...precision, description: "How precise the date is." },
+  eventEndDate: {
+    type: ["string", "null"],
+    description: "End date YYYY-MM-DD for a span, or null/omitted for a point in time.",
+  },
+  visibility,
 };
 
 export const MCP_TOOLS: McpTool[] = [
@@ -85,6 +110,49 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "delete_era",
     description: "Delete an era by id. This cannot be undone.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_posts",
+    description: "List the user's posts (moments), optionally within a date window.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Window start YYYY-MM-DD (optional)." },
+        to: { type: "string", description: "Window end YYYY-MM-DD (optional)." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_post",
+    description:
+      "Add a dated moment (markdown story) to the timeline, optionally attached to an era by id.",
+    inputSchema: {
+      type: "object",
+      properties: postProps,
+      required: ["title", "eventDate"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_post",
+    description: "Update a moment by id. Provide the full intended set of fields.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" }, ...postProps },
+      required: ["id", "title", "eventDate"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_post",
+    description: "Delete a moment by id. This cannot be undone.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" } },
@@ -143,6 +211,38 @@ export function callTool(user: UserRow, name: string, args: Args): ToolResult {
       if (!existing) return err(`Era not found: ${id}`);
       deleteEra(existing.id);
       return ok({ deleted: toEraDTO(existing).id });
+    }
+
+    case "list_posts": {
+      const from = typeof args.from === "string" ? args.from : undefined;
+      const to = typeof args.to === "string" ? args.to : undefined;
+      const range = from && to ? { from, to } : undefined;
+      return ok({ posts: listPostsForUser(user.id, range) });
+    }
+
+    case "create_post": {
+      const parsed = parsePost(args);
+      if (!parsed.ok) return err(parsed.error);
+      const r = createPost(user.id, parsed.value);
+      return r.ok ? ok({ post: r.post }) : err(r.error);
+    }
+
+    case "update_post": {
+      const id = typeof args.id === "string" ? args.id : "";
+      const existing = getOwnedPost(user.id, id);
+      if (!existing) return err(`Post not found: ${id}`);
+      const parsed = parsePost(args);
+      if (!parsed.ok) return err(parsed.error);
+      const r = updatePost(existing, parsed.value);
+      return r.ok ? ok({ post: r.post }) : err(r.error);
+    }
+
+    case "delete_post": {
+      const id = typeof args.id === "string" ? args.id : "";
+      const existing = getOwnedPost(user.id, id);
+      if (!existing) return err(`Post not found: ${id}`);
+      deletePost(existing.id);
+      return ok({ deleted: toPostDTO(existing).id });
     }
 
     default:

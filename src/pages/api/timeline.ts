@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { isValidISODate } from "~/lib/dates.ts";
 import { listErasForUser } from "~/lib/eras.ts";
+import { listPostsForUser } from "~/lib/posts.ts";
 import { json, jsonError } from "~/lib/http.ts";
 import type { TimelineData } from "~/timeline/types.ts";
 
@@ -25,6 +26,9 @@ export const GET: APIRoute = ({ locals, url }) => {
     range = { from, to };
   }
 
-  const data: TimelineData = { eras: listErasForUser(locals.user.id, range) };
+  const data: TimelineData = {
+    eras: listErasForUser(locals.user.id, range),
+    posts: listPostsForUser(locals.user.id, range),
+  };
   return json(data);
 };

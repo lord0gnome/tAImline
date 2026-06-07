@@ -19,3 +19,22 @@ cross-site.
 - Or make logout a same-origin `fetch()` POST with appropriate headers.
 
 Status: deferred (noted 2026-06-07). Login/session flow otherwise works.
+
+## BUG-2 — Can't delete eras
+
+**Symptom:** deleting an era from the editor (DELETE `/api/eras/:id`) doesn't
+work on the deployed app.
+
+**Likely cause:** almost certainly the same root cause as BUG-1 — Astro's
+`security.checkOrigin` CSRF guard rejecting a state-changing request behind the
+TLS-terminating ingress (the `DELETE` is sent without an `application/json`
+content-type, so unlike the JSON `fetch` POSTs it isn't exempt from the check).
+JSON-content-type mutations (era create/update, the MCP endpoint) are unaffected,
+which is why those work.
+
+**Candidate fixes (not yet applied):** same as BUG-1 — verify the `Origin`/`Host`
+the app sees behind nginx; either fix forwarded headers, disable `checkOrigin`
+and add our own CSRF token, or send the DELETE as a JSON `fetch` with an explicit
+content-type. Worth fixing BUG-1 + BUG-2 together (shared root cause).
+
+Status: deferred (noted 2026-06-07).
