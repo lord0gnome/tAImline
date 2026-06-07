@@ -15,6 +15,13 @@
       "when": 1780831671239,
       "tag": "0001_long_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780849180820,
+      "tag": "0002_sturdy_storm",
+      "breakpoints": true
     }
   ]
 }

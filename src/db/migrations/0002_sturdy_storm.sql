@@ -1,0 +1,1 @@
+ALTER TABLE `media` ADD `thumb_key` text;

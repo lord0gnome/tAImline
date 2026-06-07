@@ -1,9 +1,12 @@
 ---
 import Base from "~/layouts/Base.astro";
 import Timeline from "~/timeline/Timeline.tsx";
+import { storageConfigured } from "~/storage/s3.ts";
 
 const user = Astro.locals.user;
 if (!user) return Astro.redirect("/login");
+
+const storageEnabled = storageConfigured();
 ---
 
 <Base title="My timeline — tAImline">
@@ -14,6 +17,6 @@ if (!user) return Astro.redirect("/login");
       Add eras — the overlapping chapters of your life — and they stack into
       lanes automatically.
     </p>
-    <Timeline client:only="solid-js" birthDate={user.birthDate} />
+    <Timeline client:only="solid-js" birthDate={user.birthDate} storageEnabled={storageEnabled} />
   </section>
 </Base>

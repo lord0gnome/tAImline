@@ -173,6 +173,8 @@ export const media = sqliteTable(
     eraId: text("era_id").references(() => eras.id, { onDelete: "cascade" }),
     postId: text("post_id").references(() => posts.id, { onDelete: "cascade" }),
     storageKey: text("storage_key").notNull(),
+    /** Object key of the generated thumbnail (image downscale or video poster). */
+    thumbKey: text("thumb_key"),
     publicUrl: text("public_url"),
     thumbUrl: text("thumb_url"),
     width: integer("width"),

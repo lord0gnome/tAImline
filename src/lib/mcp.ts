@@ -20,7 +20,7 @@ import {
 
 type UserRow = typeof users.$inferSelect;
 
-export const MCP_SERVER_INFO = { name: "taimline", version: "0.4.0" };
+export const MCP_SERVER_INFO = { name: "taimline", version: "0.5.0" };
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpTool {

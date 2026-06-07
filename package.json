@@ -1,7 +1,7 @@
 {
   "name": "taimline",
   "type": "module",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "dev": "astro dev",
@@ -21,6 +21,7 @@
     "@astrojs/solid-js": "^6.0.1",
     "arctic": "^3.7.0",
     "astro": "^6.4.4",
+    "aws4fetch": "^1.0.20",
     "better-sqlite3": "^12.10.0",
     "drizzle-orm": "^0.45.2",
     "markdown-it": "^14.2.0",

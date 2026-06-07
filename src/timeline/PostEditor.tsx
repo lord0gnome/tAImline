@@ -1,12 +1,15 @@
-import { type Component, createSignal, For, Show } from "solid-js";
+import { type Component, createSignal, For, onMount, Show } from "solid-js";
 import type { Precision } from "~/lib/dates.ts";
+import type { MediaDTO } from "~/lib/media.ts";
 import type { EraDTO, PostDTO } from "./types.ts";
+import { processAndUpload, type UploadedMedia } from "./upload.ts";
 
 interface Props {
   post: PostDTO | null; // null = creating
   eras: EraDTO[];
   defaultEraId: string | null;
   defaultDate: string;
+  storageEnabled: boolean;
   onSaved: (post: PostDTO) => void;
   onDeleted: (id: string) => void;
   onCancel: () => void;
@@ -26,11 +29,50 @@ const PostEditor: Component<Props> = (props) => {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
+  // Media: existing (registered) + pending (uploaded to bucket, not yet linked).
+  const [existing, setExisting] = createSignal<MediaDTO[]>([]);
+  const [pending, setPending] = createSignal<UploadedMedia[]>([]);
+  const [uploading, setUploading] = createSignal(false);
+
+  onMount(async () => {
+    if (p) {
+      const res = await fetch(`/api/media?postId=${p.id}`);
+      if (res.ok) setExisting((await res.json()).media);
+    }
+  });
+
+  async function addFiles(files: FileList | null) {
+    if (!files) return;
+    setUploading(true);
+    setError(null);
+    for (const f of Array.from(files)) {
+      try {
+        const up = await processAndUpload(f);
+        setPending((prev) => [...prev, up]);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Upload failed.");
+      }
+    }
+    setUploading(false);
+  }
+
+  async function removeExisting(m: MediaDTO) {
+    if (!confirm("Remove this media?")) return;
+    const res = await fetch(`/api/media/${m.id}`, { method: "DELETE" });
+    if (res.ok) setExisting((prev) => prev.filter((x) => x.id !== m.id));
+  }
+  function removePending(i: number) {
+    setPending((prev) => {
+      URL.revokeObjectURL(prev[i].previewUrl);
+      return prev.filter((_, j) => j !== i);
+    });
+  }
+
   async function save(ev: Event) {
     ev.preventDefault();
     setBusy(true);
     setError(null);
-    const body_ = {
+    const payload = {
       title: title(),
       bodyMd: body(),
       eraId: eraId() || null,
@@ -41,14 +83,32 @@ const PostEditor: Component<Props> = (props) => {
     const res = await fetch(p ? `/api/posts/${p.id}` : "/api/posts", {
       method: p ? "PATCH" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body_),
+      body: JSON.stringify(payload),
     });
-    setBusy(false);
     if (!res.ok) {
+      setBusy(false);
       setError((await res.json().catch(() => ({}))).error ?? "Could not save the moment.");
       return;
     }
-    props.onSaved((await res.json()).post);
+    const saved: PostDTO = (await res.json()).post;
+
+    // Link any freshly-uploaded media to the (now-known) post id.
+    for (const up of pending()) {
+      await fetch("/api/media", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          postId: saved.id,
+          storageKey: up.storageKey,
+          thumbKey: up.thumbKey,
+          mime: up.mime,
+          width: up.width,
+          height: up.height,
+        }),
+      });
+    }
+    setBusy(false);
+    props.onSaved(saved);
   }
 
   async function remove() {
@@ -103,15 +163,60 @@ const PostEditor: Component<Props> = (props) => {
 
         <label>
           Story (markdown)
-          <textarea rows={10} value={body()} onInput={(e) => setBody(e.currentTarget.value)} />
+          <textarea rows={8} value={body()} onInput={(e) => setBody(e.currentTarget.value)} />
         </label>
+
+        {/* media */}
+        <Show
+          when={props.storageEnabled}
+          fallback={<p class="muted" style={{ "font-size": "0.8rem" }}>Media storage isn't configured.</p>}
+        >
+          <label>
+            Photos & videos
+            <input
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              onChange={(e) => addFiles(e.currentTarget.files)}
+            />
+          </label>
+          <Show when={uploading()}>
+            <p class="muted" style={{ "font-size": "0.8rem" }}>Uploading…</p>
+          </Show>
+          <div class="gallery">
+            <For each={existing()}>
+              {(m) => (
+                <div class="gallery__item">
+                  {m.kind === "video" ? (
+                    <video src={m.url} muted preload="metadata" />
+                  ) : (
+                    <img src={m.thumbUrl} alt={m.alt ?? ""} loading="lazy" />
+                  )}
+                  <button type="button" class="gallery__x" onClick={() => removeExisting(m)}>×</button>
+                </div>
+              )}
+            </For>
+            <For each={pending()}>
+              {(u, i) => (
+                <div class="gallery__item">
+                  {u.mime.startsWith("video/") ? (
+                    <video src={u.previewUrl} muted preload="metadata" />
+                  ) : (
+                    <img src={u.previewUrl} alt="" />
+                  )}
+                  <button type="button" class="gallery__x" onClick={() => removePending(i())}>×</button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
 
         <Show when={error()}>
           <p class="era-editor__error">{error()}</p>
         </Show>
 
         <div class="era-editor__actions">
-          <button type="submit" class="btn btn--primary" disabled={busy()}>
+          <button type="submit" class="btn btn--primary" disabled={busy() || uploading()}>
             {p ? "Save" : "Create"}
           </button>
           <button type="button" class="btn" onClick={props.onCancel} disabled={busy()}>

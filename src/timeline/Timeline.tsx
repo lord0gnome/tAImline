@@ -17,6 +17,7 @@ import type { EraDTO, PostDTO } from "./types.ts";
 
 interface Props {
   birthDate: string | null;
+  storageEnabled: boolean;
 }
 
 const RULER_H = 34;
@@ -306,6 +307,7 @@ const Timeline: Component<Props> = (props) => {
               eras={eras()}
               defaultEraId={null}
               defaultDate={defaultStart()}
+              storageEnabled={props.storageEnabled}
               onSaved={onSavedPost}
               onDeleted={onDeletedPost}
               onCancel={() => setEditingPost(null)}
