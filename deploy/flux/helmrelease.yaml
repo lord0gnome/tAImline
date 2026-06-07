@@ -26,7 +26,7 @@ spec:
     image:
       repository: ghcr.io/lord0gnome/taimline
       # Pin to a released tag; bump on each build (or wire Flux image-automation).
-      tag: "0.1.0"
+      tag: "0.2.0"
     # Private GHCR package → uncomment and provide a SOPS-managed pull secret.
     # imagePullSecrets:
     #   - name: ghcr-pull
