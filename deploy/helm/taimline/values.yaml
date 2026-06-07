@@ -1,0 +1,93 @@
+# Default values for tAImline.
+# Cluster-specific overrides live in the Flux HelmRelease (deploy/flux/).
+
+image:
+  repository: ghcr.io/lord0gnome/taimline
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# For a private GHCR package, reference a docker-registry pull secret here
+# (created via SOPS, see deploy/flux/). Leave empty for a public package.
+imagePullSecrets: []
+# - name: ghcr-pull
+
+# SQLite is embedded → the pod owns the DB file → keep a single replica.
+# Horizontal scale-out is the libSQL/Postgres path (then this becomes >1).
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 4321
+
+ingress:
+  enabled: true
+  # Public tier controller (VIP routed from the internet). Use nginx-internal
+  # for LAN-only.
+  className: nginx
+  host: taimline.morill.es
+  # cert-manager ClusterIssuer; empty => no annotation (e.g. when a wildcard
+  # default-ssl-certificate already covers the host on an internal tier).
+  clusterIssuer: letsencrypt-staging
+  # When true, emit a per-host tls block with secretName "<host>-tls".
+  tls: true
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Headroom for image uploads proxied through the app (M3).
+    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+
+persistence:
+  enabled: true
+  storageClass: longhorn
+  size: 2Gi
+  mountPath: /data
+  accessMode: ReadWriteOnce
+
+# Runs `drizzle` migrations as an init container before the app starts.
+migrations:
+  enabled: true
+
+# Non-secret environment. DATABASE_PATH must sit under persistence.mountPath.
+env:
+  PUBLIC_BASE_URL: "https://taimline.morill.es"
+  DATABASE_PATH: "/data/taimline.db"
+
+# Name of a pre-existing Secret (SOPS-managed) holding sensitive env:
+# SESSION_SECRET, GITHUB_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET,
+# S3_* credentials. Mounted via envFrom. Empty => no secret envFrom.
+existingSecret: "taimline-secrets"
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# uid/gid 1000 = the image's `node` user. fsGroup makes the Longhorn PVC
+# group-writable so the non-root process can create the SQLite file.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

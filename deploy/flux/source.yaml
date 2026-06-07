@@ -1,0 +1,22 @@
+---
+# GitRepository source for the tAImline app repo (this repo) on Gitea. The
+# Helm chart is consumed straight from ./deploy/helm/taimline, so chart + app
+# stay versioned together.
+#
+# PLACEMENT: this belongs alongside the other Flux sources, i.e. copy into
+# clusters/k3s/infrastructure/sources/taimline.yaml in the k3s/flux repo and
+# add it to that directory's kustomization.yaml. Reuses the existing
+# `flux-system` SSH secret — its public key must be authorized as a deploy key
+# on the Gitea repo (same requirement noted for the helm-charts source).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: taimline
+  namespace: flux-system
+spec:
+  interval: 5m0s
+  ref:
+    branch: master
+  secretRef:
+    name: flux-system
+  url: ssh://git@192.168.0.105:8222/lord0gnome/tAImline

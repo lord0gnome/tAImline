@@ -1,0 +1,56 @@
+---
+import "~/styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "tAImline",
+  description = "A zoomable timeline of your life, organized into eras.",
+} = Astro.props;
+
+const user = Astro.locals.user;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container site-header__inner">
+        <a class="brand" href="/">t<b>AI</b>mline</a>
+        <nav>
+          {
+            user ? (
+              <a class="btn" href="/app">
+                My timeline
+              </a>
+            ) : (
+              <a class="btn btn--primary" href="/login">
+                Sign in
+              </a>
+            )
+          }
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        tAImline — chapters of a life, on one timeline.
+      </div>
+    </footer>
+  </body>
+</html>

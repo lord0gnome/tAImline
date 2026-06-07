@@ -1,0 +1,20 @@
+tAImline {{ .Chart.AppVersion }} deployed as {{ include "taimline.fullname" . }}.
+
+{{- if .Values.ingress.enabled }}
+
+  URL: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+
+  Ingress disabled. Reach it in-cluster at:
+    {{ include "taimline.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+{{- end }}
+
+Image:    {{ include "taimline.image" . }}
+{{- if .Values.persistence.enabled }}
+Storage:  {{ .Values.persistence.size }} ({{ .Values.persistence.storageClass }}) at {{ .Values.persistence.mountPath }}
+{{- end }}
+{{- if .Values.existingSecret }}
+Secret:   {{ .Values.existingSecret }} (must exist; SOPS-managed via Flux)
+{{- end }}
+
+Migrations run as an init container before each rollout.

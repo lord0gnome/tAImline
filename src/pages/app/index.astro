@@ -1,0 +1,15 @@
+---
+import Base from "~/layouts/Base.astro";
+import TimelinePlaceholder from "~/timeline/TimelinePlaceholder.tsx";
+---
+
+<Base title="My timeline — tAImline">
+  <section style="padding-block: 2rem;">
+    <h1 style="font-size: 1.75rem;">My timeline</h1>
+    <p class="muted">
+      The editor lives here. For now this is the M0 shell with a hydrated Solid
+      island to confirm interactivity works.
+    </p>
+    <TimelinePlaceholder client:load />
+  </section>
+</Base>

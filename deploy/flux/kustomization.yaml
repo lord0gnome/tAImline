@@ -1,0 +1,14 @@
+---
+# App overlay for Flux. PLACEMENT: copy this directory's contents (except
+# source.yaml — see its header) to clusters/k3s/apps/taimline/ in the k3s/flux
+# repo, then add `taimline` to clusters/k3s/apps/kustomization.yaml.
+#
+# The encrypted secret.yaml is decrypted by the apps Kustomization
+# (decryption.provider: sops). Keep `secret.example.yaml` OUT of the resource
+# list — only the encrypted secret.yaml is applied.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - secret.yaml
+  - helmrelease.yaml

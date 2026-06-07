@@ -1,0 +1,7 @@
+apiVersion: v2
+name: taimline
+description: Zoomable life-timeline blogging app (Astro SSR + SQLite)
+type: application
+version: 0.1.0
+# appVersion tracks the container image tag when not overridden in values.
+appVersion: "0.1.0"

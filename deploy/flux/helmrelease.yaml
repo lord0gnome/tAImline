@@ -1,0 +1,44 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: taimline
+  namespace: taimline
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./deploy/helm/taimline
+      sourceRef:
+        kind: GitRepository
+        name: taimline
+        namespace: flux-system
+      reconcileStrategy: Revision
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  # Cluster-specific overrides only; everything else inherits chart defaults.
+  values:
+    image:
+      repository: ghcr.io/lord0gnome/taimline
+      # Pin to a released tag; bump on each build (or wire Flux image-automation).
+      tag: "0.1.0"
+    # Private GHCR package → uncomment and provide a SOPS-managed pull secret.
+    # imagePullSecrets:
+    #   - name: ghcr-pull
+    ingress:
+      className: nginx
+      host: taimline.morill.es
+      clusterIssuer: letsencrypt-staging
+      tls: true
+    persistence:
+      storageClass: longhorn
+      size: 2Gi
+    env:
+      PUBLIC_BASE_URL: "https://taimline.morill.es"
+      DATABASE_PATH: "/data/taimline.db"
+    existingSecret: taimline-secrets
