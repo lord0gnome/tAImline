@@ -191,23 +191,79 @@ const Timeline: Component<Props> = (props) => {
     setVp({ ...next, pxPerMs: clampZoom(next.pxPerMs) });
   }
 
-  let dragging = false;
+  // Multi-pointer tracking: 1 pointer pans, 2 pointers pinch-zoom (touch).
+  const pointers = new Map<number, number>(); // id -> clientX
   let lastX = 0;
+  let pinchDist = 0;
+
+  const dist = () => {
+    const xs = [...pointers.values()];
+    return Math.abs(xs[0] - xs[1]);
+  };
   function onPointerDown(ev: PointerEvent) {
-    dragging = true;
-    lastX = ev.clientX;
+    pointers.set(ev.pointerId, ev.clientX);
     (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+    if (pointers.size === 1) lastX = ev.clientX;
+    else if (pointers.size === 2) pinchDist = dist();
   }
   function onPointerMove(ev: PointerEvent) {
-    if (!dragging) return;
-    const dx = ev.clientX - lastX;
-    lastX = ev.clientX;
-    const v = vp();
-    setVp({ ...v, originMs: v.originMs - dx / v.pxPerMs });
+    if (!pointers.has(ev.pointerId)) return;
+    pointers.set(ev.pointerId, ev.clientX);
+    const rect = containerRef!.getBoundingClientRect();
+    if (pointers.size >= 2) {
+      const d = dist();
+      if (pinchDist > 0 && d > 0) {
+        const xs = [...pointers.values()];
+        const midX = (xs[0] + xs[1]) / 2 - rect.left;
+        const next = zoomAt(vp(), midX, d / pinchDist);
+        setVp({ ...next, pxPerMs: clampZoom(next.pxPerMs) });
+      }
+      pinchDist = d;
+    } else {
+      const dx = ev.clientX - lastX;
+      lastX = ev.clientX;
+      const v = vp();
+      setVp({ ...v, originMs: v.originMs - dx / v.pxPerMs });
+    }
   }
   function onPointerUp(ev: PointerEvent) {
-    dragging = false;
+    pointers.delete(ev.pointerId);
     (ev.currentTarget as HTMLElement).releasePointerCapture?.(ev.pointerId);
+    pinchDist = 0;
+    const rest = [...pointers.values()];
+    if (rest.length === 1) lastX = rest[0]; // avoid a jump when lifting one finger
+  }
+
+  // Keyboard: arrows pan, +/- zoom (anchored at center), Home fits.
+  function onKeyDown(ev: KeyboardEvent) {
+    const w = width();
+    const v = vp();
+    const panStep = w * 0.15;
+    switch (ev.key) {
+      case "ArrowLeft":
+        setVp({ ...v, originMs: v.originMs - panStep / v.pxPerMs });
+        break;
+      case "ArrowRight":
+        setVp({ ...v, originMs: v.originMs + panStep / v.pxPerMs });
+        break;
+      case "+":
+      case "=": {
+        const n = zoomAt(v, w / 2, 1.25);
+        setVp({ ...n, pxPerMs: clampZoom(n.pxPerMs) });
+        break;
+      }
+      case "-": {
+        const n = zoomAt(v, w / 2, 0.8);
+        setVp({ ...n, pxPerMs: clampZoom(n.pxPerMs) });
+        break;
+      }
+      case "Home":
+        setVp(frame(shownEras(), w));
+        break;
+      default:
+        return;
+    }
+    ev.preventDefault();
   }
 
   // ---- editor wiring ----------------------------------------------------
@@ -298,11 +354,15 @@ const Timeline: Component<Props> = (props) => {
         class="tl__canvas"
         ref={containerRef}
         style={{ height: `${contentHeight()}px` }}
+        tabindex="0"
+        role="group"
+        aria-label="Life timeline. Arrow keys pan, plus and minus zoom, Home fits all."
         onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
+        onKeyDown={onKeyDown}
       >
         {/* ruler */}
         <div class="tl__ruler" style={{ height: `${RULER_H}px` }}>
@@ -339,6 +399,7 @@ const Timeline: Component<Props> = (props) => {
                 classList={{ "tl__era--focused": focus().has(e.id) }}
                 onPointerDown={(ev) => ev.stopPropagation()}
                 onClick={() => setDetailEra(e)}
+                aria-label={`Era: ${e.title}, ${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)}`}
                 title={`${e.title} (${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)})`}
               >
                 <span class="tl__era-title">{e.title}</span>
@@ -361,6 +422,7 @@ const Timeline: Component<Props> = (props) => {
               }}
               onPointerDown={(ev) => ev.stopPropagation()}
               onClick={() => openPost(p)}
+              aria-label={`Moment: ${p.title}, ${formatByPrecision(p.eventDate, p.eventPrecision)}`}
               title={`${p.title} — ${formatByPrecision(p.eventDate, p.eventPrecision)}`}
             >
               <span class="tl__marker-dot" />

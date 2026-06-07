@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { generateCodeVerifier, generateState } from "arctic";
 import { GOOGLE_SCOPES, getGoogle, googleConfigured } from "~/auth/google.ts";
+import { clientKey, rateLimit } from "~/lib/ratelimit.ts";
 
 export const prerender = false;
 
@@ -13,9 +14,12 @@ const COOKIE_OPTS = (secure: boolean) =>
     maxAge: 600, // 10 minutes to complete the round-trip
   }) as const;
 
-export const GET: APIRoute = ({ cookies, redirect }) => {
+export const GET: APIRoute = ({ cookies, redirect, request, clientAddress }) => {
   if (!googleConfigured()) {
     return new Response("Google sign-in is not configured.", { status: 503 });
+  }
+  if (!rateLimit(`auth:${clientKey(request, null, clientAddress)}`, 20, 60_000)) {
+    return new Response("Too many requests, slow down.", { status: 429 });
   }
 
   const state = generateState();

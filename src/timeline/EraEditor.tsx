@@ -1,5 +1,6 @@
 import { type Component, createSignal, For, Show } from "solid-js";
 import type { Precision } from "~/lib/dates.ts";
+import DateField from "./DateField.tsx";
 import { ERA_COLORS, type EraDTO } from "./types.ts";
 
 interface Props {
@@ -82,7 +83,7 @@ const EraEditor: Component<Props> = (props) => {
         <div class="era-editor__row">
           <label>
             Start
-            <input type="date" value={startDate()} required onInput={(ev) => setStartDate(ev.currentTarget.value)} />
+            <DateField value={startDate()} precision={startPrecision()} required onChange={setStartDate} />
           </label>
           <label>
             Precision
@@ -101,7 +102,7 @@ const EraEditor: Component<Props> = (props) => {
           <div class="era-editor__row">
             <label>
               End
-              <input type="date" value={endDate()} onInput={(ev) => setEndDate(ev.currentTarget.value)} />
+              <DateField value={endDate()} precision={endPrecision()} onChange={setEndDate} />
             </label>
             <label>
               Precision

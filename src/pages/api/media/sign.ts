@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { json, jsonError, readJson } from "~/lib/http.ts";
 import { newObjectKey } from "~/lib/media.ts";
+import { rateLimit } from "~/lib/ratelimit.ts";
 import { presignPut, storageConfigured } from "~/storage/s3.ts";
 
 export const prerender = false;
@@ -19,6 +20,9 @@ const EXT: Record<string, string> = {
 /** Issue a presigned PUT URL for a single object under the user's prefix. */
 export const POST: APIRoute = async ({ locals, request }) => {
   if (!locals.user) return jsonError("Not authenticated.", 401);
+  if (!rateLimit(`media-sign:u:${locals.user.id}`, 120, 60_000)) {
+    return jsonError("Too many uploads, slow down.", 429);
+  }
   if (!storageConfigured()) return jsonError("Media storage is not configured.", 503);
 
   const body = await readJson<{ contentType?: string }>(request);

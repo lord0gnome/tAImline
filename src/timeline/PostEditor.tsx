@@ -1,5 +1,6 @@
 import { type Component, createSignal, For, onMount, Show } from "solid-js";
 import type { Precision } from "~/lib/dates.ts";
+import DateField from "./DateField.tsx";
 import type { MediaDTO } from "~/lib/media.ts";
 import type { EraDTO, PostDTO } from "./types.ts";
 import { processAndUpload, type UploadedMedia } from "./upload.ts";
@@ -136,7 +137,7 @@ const PostEditor: Component<Props> = (props) => {
         <div class="era-editor__row">
           <label>
             Date
-            <input type="date" value={eventDate()} required onInput={(e) => setEventDate(e.currentTarget.value)} />
+            <DateField value={eventDate()} precision={precision()} required onChange={setEventDate} />
           </label>
           <label>
             Precision
