@@ -32,6 +32,7 @@ const user = Astro.locals.user;
             user ? (
               <>
                 <a class="btn" href="/app">My timeline</a>
+                <a class="btn" href="/app/settings">Settings</a>
                 <span class="muted" style="font-size: 0.9rem;">{user.displayName}</span>
                 <form method="POST" action="/logout" style="margin: 0;">
                   <button class="btn" type="submit">Sign out</button>

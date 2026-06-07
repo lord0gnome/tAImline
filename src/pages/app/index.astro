@@ -1,18 +1,19 @@
 ---
 import Base from "~/layouts/Base.astro";
-import TimelinePlaceholder from "~/timeline/TimelinePlaceholder.tsx";
+import Timeline from "~/timeline/Timeline.tsx";
 
 const user = Astro.locals.user;
 if (!user) return Astro.redirect("/login");
 ---
 
 <Base title="My timeline — tAImline">
-  <section style="padding-block: 2rem;">
+  <section style="padding-block: 1.5rem;">
     <h1 style="font-size: 1.75rem;">My timeline</h1>
     <p class="muted">
-      Signed in as <strong>{user.displayName}</strong> ({"@"}{user.handle}). The
-      era editor lands in M2 — for now this is the hydrated Solid island.
+      Signed in as <strong>{user.displayName}</strong> ({"@"}{user.handle}).
+      Add eras — the overlapping chapters of your life — and they stack into
+      lanes automatically.
     </p>
-    <TimelinePlaceholder client:load />
+    <Timeline client:only="solid-js" birthDate={user.birthDate} />
   </section>
 </Base>

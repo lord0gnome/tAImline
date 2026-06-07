@@ -1,8 +1,11 @@
 ---
 import Base from "~/layouts/Base.astro";
+import { devLoginEnabled } from "~/auth/dev.ts";
 
 // Already signed in? Go straight to the app.
 if (Astro.locals.user) return Astro.redirect("/app");
+
+const devLogin = devLoginEnabled();
 ---
 
 <Base title="Sign in — tAImline">
@@ -16,6 +19,17 @@ if (Astro.locals.user) return Astro.redirect("/app");
       <p class="muted" style="font-size: 0.85rem; margin-bottom: 0;">
         GitHub sign-in is coming next.
       </p>
+      {
+        devLogin && (
+          <a
+            class="btn"
+            style="width: 100%; justify-content: center; margin-top: 0.75rem;"
+            href="/auth/dev"
+          >
+            Dev login (local testing)
+          </a>
+        )
+      }
     </div>
   </section>
 </Base>

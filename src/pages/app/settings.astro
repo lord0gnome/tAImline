@@ -1,0 +1,41 @@
+---
+import Base from "~/layouts/Base.astro";
+import TokenManager from "~/settings/TokenManager.tsx";
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect("/login");
+
+const baseUrl = import.meta.env.PUBLIC_BASE_URL ?? "http://localhost:4321";
+---
+
+<Base title="Settings — tAImline">
+  <section style="padding-block: 1.5rem; max-width: 48rem;">
+    <h1 style="font-size: 1.75rem;">Settings</h1>
+
+    <h2 style="margin-top: 1.5rem;">API tokens</h2>
+    <p class="muted">
+      Tokens let an AI assistant build your timeline over the MCP endpoint, or
+      let scripts call the API. Treat them like passwords.
+    </p>
+
+    <TokenManager client:only="solid-js" />
+
+    <h2 style="margin-top: 2rem;">Connect an MCP client</h2>
+    <p class="muted">
+      Point any MCP-compatible client at the endpoint below and pass your token
+      as a bearer header:
+    </p>
+    <pre class="card" style="overflow:auto;"><code>{JSON.stringify(
+  {
+    mcpServers: {
+      taimline: {
+        url: `${baseUrl}/mcp`,
+        headers: { Authorization: "Bearer tai_…" },
+      },
+    },
+  },
+  null,
+  2,
+)}</code></pre>
+  </section>
+</Base>

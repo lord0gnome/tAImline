@@ -5,6 +5,7 @@ import {
   setSessionCookie,
   validateSessionToken,
 } from "~/auth/session.ts";
+import { validateApiToken } from "~/auth/tokens.ts";
 
 export const onRequest = defineMiddleware(async (context, next) => {
   context.locals.user = null;
@@ -20,6 +21,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
       setSessionCookie(context.cookies, token);
     } else {
       deleteSessionCookie(context.cookies);
+    }
+  }
+
+  // Fall back to an API token (Authorization: Bearer …) for programmatic
+  // clients (the MCP server, scripts). Tokens never get a session cookie.
+  if (!context.locals.user) {
+    const auth = context.request.headers.get("authorization");
+    if (auth?.startsWith("Bearer ")) {
+      const user = validateApiToken(auth.slice(7).trim());
+      if (user) context.locals.user = user;
     }
   }
 

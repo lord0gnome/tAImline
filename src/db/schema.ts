@@ -73,6 +73,27 @@ export const sessions = sqliteTable(
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
+export const apiTokens = sqliteTable(
+  "api_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** SHA-256 hex of the full token; the plaintext is shown once at creation. */
+    tokenHash: text("token_hash").notNull(),
+    /** Short non-secret prefix for display, e.g. "tai_ab12…". */
+    prefix: text("prefix").notNull(),
+    createdAt: integer("created_at").notNull().default(now),
+    lastUsedAt: integer("last_used_at"),
+  },
+  (t) => [
+    uniqueIndex("api_tokens_hash_uq").on(t.tokenHash),
+    index("api_tokens_user_idx").on(t.userId),
+  ],
+);
+
 export const eras = sqliteTable(
   "eras",
   {

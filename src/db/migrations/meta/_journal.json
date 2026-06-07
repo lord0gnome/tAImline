@@ -8,6 +8,13 @@
       "when": 1780823319800,
       "tag": "0000_goofy_venus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1780831671239,
+      "tag": "0001_long_quasar",
+      "breakpoints": true
     }
   ]
 }
