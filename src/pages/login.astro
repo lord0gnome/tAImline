@@ -1,17 +1,21 @@
 ---
 import Base from "~/layouts/Base.astro";
+
+// Already signed in? Go straight to the app.
+if (Astro.locals.user) return Astro.redirect("/app");
 ---
 
 <Base title="Sign in — tAImline">
   <section style="padding-block: 4rem; max-width: 24rem; margin-inline: auto;">
     <div class="card">
       <h1 style="font-size: 1.5rem;">Sign in</h1>
-      <p class="muted">
-        OAuth sign-in (GitHub, then Google) lands in the next milestone.
+      <p class="muted">Sign in to build and share your timeline.</p>
+      <a class="btn btn--primary" style="width: 100%; justify-content: center;" href="/auth/google">
+        Continue with Google
+      </a>
+      <p class="muted" style="font-size: 0.85rem; margin-bottom: 0;">
+        GitHub sign-in is coming next.
       </p>
-      <button class="btn btn--primary" style="width: 100%;" disabled>
-        Continue with GitHub
-      </button>
     </div>
   </section>
 </Base>

@@ -1,14 +1,17 @@
 ---
 import Base from "~/layouts/Base.astro";
 import TimelinePlaceholder from "~/timeline/TimelinePlaceholder.tsx";
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect("/login");
 ---
 
 <Base title="My timeline — tAImline">
   <section style="padding-block: 2rem;">
     <h1 style="font-size: 1.75rem;">My timeline</h1>
     <p class="muted">
-      The editor lives here. For now this is the M0 shell with a hydrated Solid
-      island to confirm interactivity works.
+      Signed in as <strong>{user.displayName}</strong> ({"@"}{user.handle}). The
+      era editor lands in M2 — for now this is the hydrated Solid island.
     </p>
     <TimelinePlaceholder client:load />
   </section>
