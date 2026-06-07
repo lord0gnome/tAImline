@@ -123,9 +123,12 @@ const Timeline: Component<Props> = (props) => {
     return posts().filter((p) => p.eraId && ids.has(p.eraId));
   });
 
-  // Lane assignment over the shown eras (ongoing eras end "now").
+  // Lane assignment over the shown eras (ongoing eras end "now"), honoring any
+  // manual lane preference set by dragging.
   const lanes = createMemo(() =>
-    packLanes(shownEras().map((e) => ({ id: e.id, startMs: toMs(e.startDate), endMs: endMsOf(e) }))),
+    packLanes(
+      shownEras().map((e) => ({ id: e.id, startMs: toMs(e.startDate), endMs: endMsOf(e), lane: e.lane })),
+    ),
   );
 
   const ticks = createMemo(() => {
@@ -171,7 +174,7 @@ const Timeline: Component<Props> = (props) => {
   function applyFocus(f: Set<string>) {
     setFocus(f);
     const shown = computeShown(eras(), f);
-    setVp(frame(shown.length ? shown : eras(), width()));
+    animateViewport(frame(shown.length ? shown : eras(), width()));
   }
   function toggleFocus(id: string) {
     const f = new Set(focus());
@@ -180,9 +183,39 @@ const Timeline: Component<Props> = (props) => {
   }
   const focusedEras = () => eras().filter((e) => focus().has(e.id));
 
+  // ---- eased viewport tween (for discrete actions: fit/focus/keyboard) ---
+  let rafId = 0;
+  const reduceMotion = () =>
+    typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function animateViewport(target: Viewport, duration = 280) {
+    cancelAnimationFrame(rafId);
+    if (reduceMotion()) {
+      setVp(target);
+      return;
+    }
+    const start = vp();
+    const t0 = performance.now();
+    const ease = (t: number) => 1 - (1 - t) ** 3; // easeOutCubic
+    const logS = Math.log(start.pxPerMs);
+    const logE = Math.log(target.pxPerMs);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / duration);
+      const k = ease(t);
+      setVp({
+        originMs: start.originMs + (target.originMs - start.originMs) * k,
+        pxPerMs: Math.exp(logS + (logE - logS) * k), // log-space = natural zoom
+      });
+      if (t < 1) rafId = requestAnimationFrame(step);
+    };
+    rafId = requestAnimationFrame(step);
+  }
+  onCleanup(() => cancelAnimationFrame(rafId));
+
   // ---- interaction: wheel zoom + drag pan -------------------------------
   function onWheel(ev: WheelEvent) {
     ev.preventDefault();
+    cancelAnimationFrame(rafId); // user takes over from any running tween
     const rect = containerRef!.getBoundingClientRect();
     const anchorX = ev.clientX - rect.left;
     const factor = Math.exp(-ev.deltaY * 0.0015); // smooth, cursor-anchored
@@ -201,6 +234,7 @@ const Timeline: Component<Props> = (props) => {
     return Math.abs(xs[0] - xs[1]);
   };
   function onPointerDown(ev: PointerEvent) {
+    cancelAnimationFrame(rafId); // stop any tween when the user grabs the canvas
     pointers.set(ev.pointerId, ev.clientX);
     (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
     if (pointers.size === 1) lastX = ev.clientX;
@@ -238,32 +272,85 @@ const Timeline: Component<Props> = (props) => {
   function onKeyDown(ev: KeyboardEvent) {
     const w = width();
     const v = vp();
-    const panStep = w * 0.15;
+    const panStep = w * 0.2;
     switch (ev.key) {
       case "ArrowLeft":
-        setVp({ ...v, originMs: v.originMs - panStep / v.pxPerMs });
+        animateViewport({ ...v, originMs: v.originMs - panStep / v.pxPerMs }, 180);
         break;
       case "ArrowRight":
-        setVp({ ...v, originMs: v.originMs + panStep / v.pxPerMs });
+        animateViewport({ ...v, originMs: v.originMs + panStep / v.pxPerMs }, 180);
         break;
       case "+":
       case "=": {
-        const n = zoomAt(v, w / 2, 1.25);
-        setVp({ ...n, pxPerMs: clampZoom(n.pxPerMs) });
+        const n = zoomAt(v, w / 2, 1.4);
+        animateViewport({ ...n, pxPerMs: clampZoom(n.pxPerMs) }, 200);
         break;
       }
       case "-": {
-        const n = zoomAt(v, w / 2, 0.8);
-        setVp({ ...n, pxPerMs: clampZoom(n.pxPerMs) });
+        const n = zoomAt(v, w / 2, 1 / 1.4);
+        animateViewport({ ...n, pxPerMs: clampZoom(n.pxPerMs) }, 200);
         break;
       }
       case "Home":
-        setVp(frame(shownEras(), w));
+        animateViewport(frame(shownEras(), w));
         break;
       default:
         return;
     }
     ev.preventDefault();
+  }
+
+  // ---- vertical drag to re-lane an era ----------------------------------
+  const [dragLane, setDragLane] = createSignal<{ id: string; y: number } | null>(null);
+  let dragId: string | null = null;
+  let dragStartY = 0;
+  let dragMoved = false;
+  let canvasTop = 0;
+  let suppressClickId: string | null = null;
+
+  function eraPointerDown(ev: PointerEvent, e: EraDTO) {
+    ev.stopPropagation(); // don't pan the canvas
+    if (props.readOnly) return;
+    canvasTop = containerRef!.getBoundingClientRect().top;
+    dragId = e.id;
+    dragStartY = ev.clientY;
+    dragMoved = false;
+    (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+  }
+  function eraPointerMove(ev: PointerEvent) {
+    if (dragId === null) return;
+    if (!dragMoved && Math.abs(ev.clientY - dragStartY) < 5) return;
+    dragMoved = true;
+    setDragLane({ id: dragId, y: ev.clientY - canvasTop });
+  }
+  function eraPointerUp(ev: PointerEvent, e: EraDTO) {
+    if (dragId === null) return;
+    const moved = dragMoved;
+    const y = ev.clientY - canvasTop;
+    (ev.currentTarget as HTMLElement).releasePointerCapture?.(ev.pointerId);
+    dragId = null;
+    setDragLane(null);
+    if (moved) {
+      suppressClickId = e.id; // the click that follows shouldn't open the drawer
+      const target = Math.round((y - RULER_H - LANE_GAP) / (LANE_H + LANE_GAP));
+      const clamped = Math.max(0, Math.min(target, lanes().laneCount));
+      if (clamped !== lanes().lanes[e.id]) void persistLane(e, clamped);
+    }
+  }
+  function eraClick(e: EraDTO) {
+    if (suppressClickId === e.id) {
+      suppressClickId = null;
+      return;
+    }
+    setDetailEra(e);
+  }
+  async function persistLane(e: EraDTO, lane: number) {
+    setEras((prev) => prev.map((x) => (x.id === e.id ? { ...x, lane } : x))); // optimistic
+    await fetch(`/api/eras/${e.id}/lane`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lane }),
+    });
   }
 
   // ---- editor wiring ----------------------------------------------------
@@ -329,7 +416,7 @@ const Timeline: Component<Props> = (props) => {
             + New moment
           </button>
         </Show>
-        <button class="btn" onClick={() => setVp(frame(shownEras(), width()))}>
+        <button class="btn" onClick={() => animateViewport(frame(shownEras(), width()))}>
           Fit
         </button>
         <Show
@@ -385,7 +472,11 @@ const Timeline: Component<Props> = (props) => {
           {(e) => {
             const startX = () => dateToX(toMs(e.startDate), vp());
             const w = () => Math.max(MIN_BAR_PX, dateToX(endMsOf(e), vp()) - startX());
-            const top = () => RULER_H + LANE_GAP + lanes().lanes[e.id] * (LANE_H + LANE_GAP);
+            const dragging = () => dragLane()?.id === e.id;
+            const top = () =>
+              dragging()
+                ? dragLane()!.y - LANE_H / 2
+                : RULER_H + LANE_GAP + lanes().lanes[e.id] * (LANE_H + LANE_GAP);
             return (
               <button
                 class="tl__era"
@@ -396,9 +487,11 @@ const Timeline: Component<Props> = (props) => {
                   height: `${LANE_H}px`,
                   "--era-color": e.color ?? "var(--accent)",
                 }}
-                classList={{ "tl__era--focused": focus().has(e.id) }}
-                onPointerDown={(ev) => ev.stopPropagation()}
-                onClick={() => setDetailEra(e)}
+                classList={{ "tl__era--focused": focus().has(e.id), "tl__era--dragging": dragging() }}
+                onPointerDown={(ev) => eraPointerDown(ev, e)}
+                onPointerMove={eraPointerMove}
+                onPointerUp={(ev) => eraPointerUp(ev, e)}
+                onClick={() => eraClick(e)}
                 aria-label={`Era: ${e.title}, ${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)}`}
                 title={`${e.title} (${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)})`}
               >
@@ -468,32 +561,37 @@ const Timeline: Component<Props> = (props) => {
       </Show>
 
       <Show when={detailEra()}>
-        {(era) => (
-          <div class="tl__drawer-backdrop" onClick={() => setDetailEra(null)}>
-            <div onClick={(ev) => ev.stopPropagation()}>
-              <EraDetail
-                era={era()}
-                posts={postsInEra(era().id)}
-                focused={focus().has(era().id)}
-                readOnly={props.readOnly ?? false}
-                onEdit={() => {
-                  setDetailEra(null);
-                  setEditing(era());
-                }}
-                onAddMoment={() => addMomentTo(era().id)}
-                onOpenPost={(p) => {
-                  setDetailEra(null);
-                  openPost(p);
-                }}
-                onToggleFocus={() => {
-                  toggleFocus(era().id);
-                  setDetailEra(null);
-                }}
-                onClose={() => setDetailEra(null)}
-              />
+        {(era) => {
+          // Capture the value once: handlers must not call the Show accessor
+          // after setDetailEra(null) unmounts this branch.
+          const e = era();
+          return (
+            <div class="tl__drawer-backdrop" onClick={() => setDetailEra(null)}>
+              <div onClick={(ev) => ev.stopPropagation()}>
+                <EraDetail
+                  era={e}
+                  posts={postsInEra(e.id)}
+                  focused={focus().has(e.id)}
+                  readOnly={props.readOnly ?? false}
+                  onEdit={() => {
+                    setEditing(e);
+                    setDetailEra(null);
+                  }}
+                  onAddMoment={() => addMomentTo(e.id)}
+                  onOpenPost={(p) => {
+                    setDetailEra(null);
+                    openPost(p);
+                  }}
+                  onToggleFocus={() => {
+                    setDetailEra(null);
+                    toggleFocus(e.id);
+                  }}
+                  onClose={() => setDetailEra(null)}
+                />
+              </div>
             </div>
-          </div>
-        )}
+          );
+        }}
       </Show>
     </div>
   );

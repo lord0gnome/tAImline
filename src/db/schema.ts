@@ -117,6 +117,8 @@ export const eras = sqliteTable(
     endPrecision: text("end_precision").$type<Precision>(),
     color: text("color"),
     category: text("category"),
+    /** Manual lane preference set by dragging; null = auto-packed. */
+    lane: integer("lane"),
     coverMediaId: text("cover_media_id"),
     visibility: text("visibility")
       .$type<EraVisibility>()

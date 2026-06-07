@@ -264,6 +264,19 @@ a:hover {
 .tl__era:hover {
   background: color-mix(in oklab, var(--era-color) 28%, var(--surface));
 }
+/* Animate lane (top) changes and hover — never `transform`, so pan/zoom stay snappy. */
+.tl__era {
+  transition: top 0.18s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.tl__era--dragging {
+  z-index: 5;
+  transition: none; /* follow the cursor 1:1 while dragging */
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  cursor: grabbing;
+}
+.tl__marker {
+  transition: top 0.18s ease;
+}
 .tl__era-title {
   font-weight: 700;
   font-size: 0.85rem;
@@ -330,6 +343,26 @@ a:hover {
   background: rgba(0, 0, 0, 0.35);
   display: flex;
   justify-content: flex-end;
+  animation: tl-fade 0.15s ease;
+}
+.tl__drawer-backdrop > div {
+  animation: tl-slide-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes tl-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes tl-slide-in {
+  from { transform: translateX(16px); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 .era-editor {
   width: min(420px, 100vw);

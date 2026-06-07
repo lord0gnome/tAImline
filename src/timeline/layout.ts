@@ -7,6 +7,8 @@ export interface LaneItem {
   startMs: number;
   /** Exclusive end. Ongoing eras pass a sentinel end (e.g. "now"). */
   endMs: number;
+  /** Manual lane preference (from dragging); honored if free, else auto. */
+  lane?: number | null;
 }
 
 export interface LaneResult {
@@ -15,16 +17,34 @@ export interface LaneResult {
   laneCount: number;
 }
 
+/**
+ * Greedy lane packing with optional manual hints. Hinted items claim their
+ * preferred lane first (when free); everything else is auto-packed into the
+ * remaining gaps. With no hints this is the plain greedy algorithm.
+ */
 export function packLanes(items: LaneItem[]): LaneResult {
   // Sort by start, then by end, then id for a stable, predictable packing.
   const sorted = [...items].sort(
     (a, b) => a.startMs - b.startMs || a.endMs - b.endMs || (a.id < b.id ? -1 : 1),
   );
 
-  const laneEnds: number[] = [];
+  const laneEnds: number[] = []; // -Infinity = an open (unused) lane
   const lanes: Record<string, number> = {};
 
+  // Pass 1: honor manual lane hints when the slot is free at the item's start.
   for (const item of sorted) {
+    if (item.lane == null || item.lane < 0) continue;
+    const want = Math.min(item.lane, sorted.length - 1);
+    while (laneEnds.length <= want) laneEnds.push(-Infinity);
+    if (laneEnds[want] <= item.startMs) {
+      lanes[item.id] = want;
+      laneEnds[want] = item.endMs;
+    }
+  }
+
+  // Pass 2: auto-pack the rest into the first free lane.
+  for (const item of sorted) {
+    if (lanes[item.id] !== undefined) continue;
     let placed = false;
     for (let i = 0; i < laneEnds.length; i++) {
       if (laneEnds[i] <= item.startMs) {

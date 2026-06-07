@@ -13,6 +13,7 @@ export interface EraDTO {
   endPrecision: Precision | null;
   color: string | null;
   category: string | null;
+  lane: number | null;
   visibility: EraVisibility;
 }
 

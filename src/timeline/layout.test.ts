@@ -48,6 +48,28 @@ describe("packLanes", () => {
     expect(r.laneCount).toBe(1);
   });
 
+  it("honors a manual lane hint when the slot is free", () => {
+    const r = packLanes([
+      { id: "a", startMs: ms("2000-01-01"), endMs: ms("2001-01-01") },
+      // b would auto-pack to lane 0 (no overlap with a), but is pinned to lane 1.
+      { id: "b", startMs: ms("2002-01-01"), endMs: ms("2003-01-01"), lane: 1 },
+      { id: "c", startMs: ms("2004-01-01"), endMs: ms("2005-01-01") },
+    ]);
+    expect(r.lanes.b).toBe(1); // honored despite no overlap
+    expect(r.lanes.a).toBe(0);
+    expect(r.lanes.c).toBe(0); // auto-packs into the free lane 0
+  });
+
+  it("falls back to auto when a hinted lane conflicts", () => {
+    const r = packLanes([
+      { id: "a", startMs: ms("2000-01-01"), endMs: ms("2005-01-01"), lane: 0 },
+      // wants lane 0 too but overlaps a → auto-packs to lane 1.
+      { id: "b", startMs: ms("2001-01-01"), endMs: ms("2003-01-01"), lane: 0 },
+    ]);
+    expect(r.lanes.a).toBe(0);
+    expect(r.lanes.b).toBe(1);
+  });
+
   it("is stable regardless of input order", () => {
     const items = [
       { id: "c", startMs: ms("2002-01-01"), endMs: ms("2004-01-01") },

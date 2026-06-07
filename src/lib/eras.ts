@@ -21,6 +21,7 @@ export function toEraDTO(row: EraRow): EraDTO {
     endPrecision: row.endPrecision,
     color: row.color,
     category: row.category,
+    lane: row.lane,
     visibility: row.visibility,
   };
 }
@@ -201,4 +202,13 @@ export function updateEra(existing: EraRow, value: ParsedEra): EraDTO {
 
 export function deleteEra(id: string): void {
   db.delete(eras).where(eq(eras.id, id)).run();
+}
+
+/** Persist a manual lane preference (from vertical drag). */
+export function setEraLane(existing: EraRow, lane: number | null): EraDTO {
+  db.update(eras)
+    .set({ lane, updatedAt: Math.floor(Date.now() / 1000) })
+    .where(eq(eras.id, existing.id))
+    .run();
+  return toEraDTO(db.select().from(eras).where(eq(eras.id, existing.id)).get()!);
 }
