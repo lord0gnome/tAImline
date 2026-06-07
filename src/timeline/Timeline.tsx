@@ -19,6 +19,8 @@ import type { EraDTO, PostDTO } from "./types.ts";
 interface Props {
   birthDate: string | null;
   storageEnabled?: boolean;
+  /** Fill the viewport height (the app's primary, full-screen timeline). */
+  fill?: boolean;
   /** Read-only public view: no editing, data passed in, markers link out. */
   readOnly?: boolean;
   ownerHandle?: string;
@@ -46,6 +48,7 @@ const Timeline: Component<Props> = (props) => {
   const [detailEra, setDetailEra] = createSignal<EraDTO | null>(null);
   const [newPostEraId, setNewPostEraId] = createSignal<string | null>(null);
   const [focus, setFocus] = createSignal<Set<string>>(new Set());
+  const [availH, setAvailH] = createSignal(480);
   const [loaded, setLoaded] = createSignal(false);
 
   let containerRef: HTMLDivElement | undefined;
@@ -91,9 +94,16 @@ const Timeline: Component<Props> = (props) => {
     setLoaded(true);
   }
 
+  function measure() {
+    if (!containerRef) return;
+    setWidth(containerRef.clientWidth);
+    // Available height from the canvas top to the viewport bottom (minus margin).
+    setAvailH(Math.max(280, window.innerHeight - containerRef.getBoundingClientRect().top - 16));
+  }
+
   onMount(() => {
-    if (containerRef) setWidth(containerRef.clientWidth);
-    const onResize = () => containerRef && setWidth(containerRef.clientWidth);
+    measure();
+    const onResize = () => measure();
     window.addEventListener("resize", onResize);
     onCleanup(() => window.removeEventListener("resize", onResize));
     if (props.readOnly) {
@@ -156,6 +166,8 @@ const Timeline: Component<Props> = (props) => {
   const hasFreePosts = () => shownPosts().some(isFree);
 
   const contentHeight = () => lanesBottom() + (hasFreePosts() ? POST_ROW_H : 0);
+  // In fill mode the canvas reaches the viewport bottom (grows if lanes exceed it).
+  const canvasHeight = () => (props.fill ? Math.max(contentHeight(), availH()) : contentHeight());
 
   // Marker vertical position: a pin atop its era's bar, or the free strip.
   const postTop = (p: PostDTO) => (isFree(p) ? lanesBottom() + 4 : laneTop(p.eraId!) + 4);
@@ -406,7 +418,7 @@ const Timeline: Component<Props> = (props) => {
   const todayX = () => dateToX(nowMs, vp());
 
   return (
-    <div class="tl">
+    <div class="tl" classList={{ "tl--fill": props.fill }}>
       <div class="tl__toolbar">
         <Show when={!props.readOnly}>
           <button class="btn btn--primary" onClick={() => setEditing("new")}>
@@ -440,7 +452,7 @@ const Timeline: Component<Props> = (props) => {
       <div
         class="tl__canvas"
         ref={containerRef}
-        style={{ height: `${contentHeight()}px` }}
+        style={{ height: `${canvasHeight()}px` }}
         tabindex="0"
         role="group"
         aria-label="Life timeline. Arrow keys pan, plus and minus zoom, Home fits all."

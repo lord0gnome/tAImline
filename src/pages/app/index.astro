@@ -9,14 +9,14 @@ if (!user) return Astro.redirect("/login");
 const storageEnabled = storageConfigured();
 ---
 
-<Base title="My timeline — tAImline">
-  <section style="padding-block: 1.5rem;">
-    <h1 style="font-size: 1.75rem;">My timeline</h1>
-    <p class="muted">
-      Signed in as <strong>{user.displayName}</strong> ({"@"}{user.handle}).
-      Add eras — the overlapping chapters of your life — and they stack into
-      lanes automatically.
-    </p>
-    <Timeline client:only="solid-js" birthDate={user.birthDate} storageEnabled={storageEnabled} />
-  </section>
+<Base title="My timeline — tAImline" fullBleed={true}>
+  <h1 class="visually-hidden">My timeline</h1>
+  <div class="app-tl">
+    <Timeline
+      client:only="solid-js"
+      birthDate={user.birthDate}
+      storageEnabled={storageEnabled}
+      fill={true}
+    />
+  </div>
 </Base>

@@ -21,7 +21,7 @@ import { attachMediaFromUrl } from "~/lib/media.ts";
 
 type UserRow = typeof users.$inferSelect;
 
-export const MCP_SERVER_INFO = { name: "taimline", version: "0.9.0" };
+export const MCP_SERVER_INFO = { name: "taimline", version: "0.10.0" };
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpTool {

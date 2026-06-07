@@ -7,6 +7,8 @@ interface Props {
   ogImage?: string;
   ogType?: string;
   noindex?: boolean;
+  /** Full-bleed, full-height layout (no centered container, no footer). */
+  fullBleed?: boolean;
 }
 
 const {
@@ -15,6 +17,7 @@ const {
   ogImage,
   ogType = "website",
   noindex = false,
+  fullBleed = false,
 } = Astro.props;
 
 const user = Astro.locals.user;
@@ -40,7 +43,7 @@ const absImage = ogImage && base && ogImage.startsWith("/") ? `${base}${ogImage}
     <meta name="twitter:card" content={absImage ? "summary_large_image" : "summary"} />
     <title>{title}</title>
   </head>
-  <body>
+  <body class={fullBleed ? "body--full" : undefined}>
     <header class="site-header">
       <div class="container site-header__inner">
         <a class="brand" href="/">t<b>AI</b>mline</a>
@@ -65,14 +68,16 @@ const absImage = ogImage && base && ogImage.startsWith("/") ? `${base}${ogImage}
       </div>
     </header>
 
-    <main class="container">
+    <main class={fullBleed ? "main--full" : "container"}>
       <slot />
     </main>
 
-    <footer class="site-footer">
-      <div class="container">
-        tAImline — chapters of a life, on one timeline.
-      </div>
-    </footer>
+    {
+      !fullBleed && (
+        <footer class="site-footer">
+          <div class="container">tAImline — chapters of a life, on one timeline.</div>
+        </footer>
+      )
+    }
   </body>
 </html>
