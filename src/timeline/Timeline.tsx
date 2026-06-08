@@ -29,9 +29,9 @@ interface Props {
 }
 
 const RULER_H = 34;
-const LANE_H = 46;
-const LANE_GAP = 8;
-const MIN_BAR_PX = 8;
+const LANE_H = 16;
+const LANE_GAP = 1;
+const MIN_BAR_PX = 4;
 const POST_ROW_H = 30; // free-floating posts strip at the bottom
 const PX_PER_MS_MIN = 5 / (3650 * MS_DAY); // ~5px per decade (max zoom-out)
 const PX_PER_MS_MAX = 200 / MS_DAY; // 200px per day (max zoom-in)
@@ -49,6 +49,7 @@ const Timeline: Component<Props> = (props) => {
   const [newPostEraId, setNewPostEraId] = createSignal<string | null>(null);
   const [focus, setFocus] = createSignal<Set<string>>(new Set());
   const [availH, setAvailH] = createSignal(480);
+  const [hover, setHover] = createSignal<{ post: PostDTO; x: number; y: number } | null>(null);
   const [loaded, setLoaded] = createSignal(false);
 
   let containerRef: HTMLDivElement | undefined;
@@ -90,7 +91,7 @@ const Timeline: Component<Props> = (props) => {
     const list: EraDTO[] = data.eras ?? [];
     setEras(list);
     setPosts(data.posts ?? []);
-    if (!loaded()) setVp(frame(list, width()));
+    if (!loaded()) setViewportNow(frame(list, width()));
     setLoaded(true);
   }
 
@@ -110,7 +111,7 @@ const Timeline: Component<Props> = (props) => {
       // Public view: data is provided; no API fetch.
       setEras(props.initialEras ?? []);
       setPosts(props.initialPosts ?? []);
-      setVp(frame(props.initialEras ?? [], width()));
+      setViewportNow(frame(props.initialEras ?? [], width()));
       setLoaded(true);
     } else {
       void load();
@@ -186,7 +187,7 @@ const Timeline: Component<Props> = (props) => {
   function applyFocus(f: Set<string>) {
     setFocus(f);
     const shown = computeShown(eras(), f);
-    animateViewport(frame(shown.length ? shown : eras(), width()));
+    tweenTo(frame(shown.length ? shown : eras(), width()));
   }
   function toggleFocus(id: string) {
     const f = new Set(focus());
@@ -195,45 +196,63 @@ const Timeline: Component<Props> = (props) => {
   }
   const focusedEras = () => eras().filter((e) => focus().has(e.id));
 
-  // ---- eased viewport tween (for discrete actions: fit/focus/keyboard) ---
+  // ---- smooth viewport: ease the displayed viewport toward a target -----
+  let target: Viewport = vp();
   let rafId = 0;
   const reduceMotion = () =>
     typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const clampVp = (v: Viewport): Viewport => ({ ...v, pxPerMs: clampZoom(v.pxPerMs) });
 
-  function animateViewport(target: Viewport, duration = 280) {
-    cancelAnimationFrame(rafId);
+  function stepTween() {
+    const cur = vp();
+    const k = 0.22; // per-frame easing toward target
+    const o = cur.originMs + (target.originMs - cur.originMs) * k;
+    const logCur = Math.log(cur.pxPerMs);
+    const p = Math.exp(logCur + (Math.log(target.pxPerMs) - logCur) * k);
+    const offByPx = Math.abs((target.originMs - o) * cur.pxPerMs);
+    if (offByPx < 0.5 && Math.abs(target.pxPerMs / p - 1) < 0.002) {
+      setVp(target);
+      rafId = 0;
+      return;
+    }
+    setVp({ originMs: o, pxPerMs: p });
+    rafId = requestAnimationFrame(stepTween);
+  }
+
+  /** Ease toward a viewport (smooth). Used by zoom/pan-wheel/keyboard/fit/focus. */
+  function tweenTo(v: Viewport) {
+    target = clampVp(v);
     if (reduceMotion()) {
       setVp(target);
       return;
     }
-    const start = vp();
-    const t0 = performance.now();
-    const ease = (t: number) => 1 - (1 - t) ** 3; // easeOutCubic
-    const logS = Math.log(start.pxPerMs);
-    const logE = Math.log(target.pxPerMs);
-    const step = (now: number) => {
-      const t = Math.min(1, (now - t0) / duration);
-      const k = ease(t);
-      setVp({
-        originMs: start.originMs + (target.originMs - start.originMs) * k,
-        pxPerMs: Math.exp(logS + (logE - logS) * k), // log-space = natural zoom
-      });
-      if (t < 1) rafId = requestAnimationFrame(step);
-    };
-    rafId = requestAnimationFrame(step);
+    if (!rafId) rafId = requestAnimationFrame(stepTween);
+  }
+
+  /** Jump immediately (drag, pinch, initial framing) — no easing. */
+  function setViewportNow(v: Viewport) {
+    cancelAnimationFrame(rafId);
+    rafId = 0;
+    target = clampVp(v);
+    setVp(target);
   }
   onCleanup(() => cancelAnimationFrame(rafId));
 
-  // ---- interaction: wheel zoom + drag pan -------------------------------
+  // ---- interaction: wheel ----------------------------------------------
+  // Plain wheel scrolls the page (vertical). Ctrl/⌘+wheel zooms (cursor-
+  // anchored), Shift+wheel pans through time — both smoothed via tweenTo.
   function onWheel(ev: WheelEvent) {
-    ev.preventDefault();
-    cancelAnimationFrame(rafId); // user takes over from any running tween
-    const rect = containerRef!.getBoundingClientRect();
-    const anchorX = ev.clientX - rect.left;
-    const factor = Math.exp(-ev.deltaY * 0.0015); // smooth, cursor-anchored
-    const v = vp();
-    const next = zoomAt(v, anchorX, factor);
-    setVp({ ...next, pxPerMs: clampZoom(next.pxPerMs) });
+    if (ev.ctrlKey || ev.metaKey) {
+      ev.preventDefault();
+      const rect = containerRef!.getBoundingClientRect();
+      const anchorX = ev.clientX - rect.left;
+      tweenTo(zoomAt(target, anchorX, Math.exp(-ev.deltaY * 0.002)));
+    } else if (ev.shiftKey) {
+      ev.preventDefault();
+      const d = ev.deltaY || ev.deltaX;
+      tweenTo({ ...target, originMs: target.originMs + d / target.pxPerMs });
+    }
+    // else: let the browser scroll vertically.
   }
 
   // Multi-pointer tracking: 1 pointer pans, 2 pointers pinch-zoom (touch).
@@ -247,6 +266,8 @@ const Timeline: Component<Props> = (props) => {
   };
   function onPointerDown(ev: PointerEvent) {
     cancelAnimationFrame(rafId); // stop any tween when the user grabs the canvas
+    rafId = 0;
+    target = vp();
     pointers.set(ev.pointerId, ev.clientX);
     (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
     if (pointers.size === 1) lastX = ev.clientX;
@@ -261,15 +282,14 @@ const Timeline: Component<Props> = (props) => {
       if (pinchDist > 0 && d > 0) {
         const xs = [...pointers.values()];
         const midX = (xs[0] + xs[1]) / 2 - rect.left;
-        const next = zoomAt(vp(), midX, d / pinchDist);
-        setVp({ ...next, pxPerMs: clampZoom(next.pxPerMs) });
+        setViewportNow(zoomAt(vp(), midX, d / pinchDist)); // pinch is 1:1
       }
       pinchDist = d;
     } else {
       const dx = ev.clientX - lastX;
       lastX = ev.clientX;
       const v = vp();
-      setVp({ ...v, originMs: v.originMs - dx / v.pxPerMs });
+      setViewportNow({ ...v, originMs: v.originMs - dx / v.pxPerMs }); // drag is 1:1
     }
   }
   function onPointerUp(ev: PointerEvent) {
@@ -283,28 +303,23 @@ const Timeline: Component<Props> = (props) => {
   // Keyboard: arrows pan, +/- zoom (anchored at center), Home fits.
   function onKeyDown(ev: KeyboardEvent) {
     const w = width();
-    const v = vp();
     const panStep = w * 0.2;
     switch (ev.key) {
       case "ArrowLeft":
-        animateViewport({ ...v, originMs: v.originMs - panStep / v.pxPerMs }, 180);
+        tweenTo({ ...target, originMs: target.originMs - panStep / target.pxPerMs });
         break;
       case "ArrowRight":
-        animateViewport({ ...v, originMs: v.originMs + panStep / v.pxPerMs }, 180);
+        tweenTo({ ...target, originMs: target.originMs + panStep / target.pxPerMs });
         break;
       case "+":
-      case "=": {
-        const n = zoomAt(v, w / 2, 1.4);
-        animateViewport({ ...n, pxPerMs: clampZoom(n.pxPerMs) }, 200);
+      case "=":
+        tweenTo(zoomAt(target, w / 2, 1.4));
         break;
-      }
-      case "-": {
-        const n = zoomAt(v, w / 2, 1 / 1.4);
-        animateViewport({ ...n, pxPerMs: clampZoom(n.pxPerMs) }, 200);
+      case "-":
+        tweenTo(zoomAt(target, w / 2, 1 / 1.4));
         break;
-      }
       case "Home":
-        animateViewport(frame(shownEras(), w));
+        tweenTo(frame(shownEras(), w));
         break;
       default:
         return;
@@ -428,12 +443,12 @@ const Timeline: Component<Props> = (props) => {
             + New moment
           </button>
         </Show>
-        <button class="btn" onClick={() => animateViewport(frame(shownEras(), width()))}>
+        <button class="btn" onClick={() => tweenTo(frame(shownEras(), width()))}>
           Fit
         </button>
         <Show
           when={focus().size > 0}
-          fallback={<span class="tl__hint muted">drag to pan · scroll to zoom · click an era to focus</span>}
+          fallback={<span class="tl__hint muted">drag to pan · scroll to move · ⌘/Ctrl+scroll to zoom</span>}
         >
           <span class="tl__focus">
             <span class="muted">Focusing:</span>
@@ -527,8 +542,10 @@ const Timeline: Component<Props> = (props) => {
               }}
               onPointerDown={(ev) => ev.stopPropagation()}
               onClick={() => openPost(p)}
+              onMouseEnter={(ev) => setHover({ post: p, x: ev.clientX, y: ev.clientY })}
+              onMouseMove={(ev) => setHover({ post: p, x: ev.clientX, y: ev.clientY })}
+              onMouseLeave={() => setHover(null)}
               aria-label={`Moment: ${p.title}, ${formatByPrecision(p.eventDate, p.eventPrecision)}`}
-              title={`${p.title} — ${formatByPrecision(p.eventDate, p.eventPrecision)}`}
             >
               <span class="tl__marker-dot" />
               <span class="tl__marker-label">{p.title}</span>
@@ -540,6 +557,30 @@ const Timeline: Component<Props> = (props) => {
           <p class="tl__empty muted">No eras yet — add the first chapter of your life.</p>
         </Show>
       </div>
+
+      {/* hover preview of a moment's rendered markdown */}
+      <Show when={hover()}>
+        {(h) => (
+          <div
+            class="tl__popup"
+            style={{
+              left: `${Math.min(h().x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 332)}px`,
+              top: `${Math.min(h().y + 16, (typeof window !== "undefined" ? window.innerHeight : 800) - 280)}px`,
+            }}
+          >
+            <div class="tl__popup-title">{h().post.title}</div>
+            <div class="tl__popup-date">
+              {formatByPrecision(h().post.eventDate, h().post.eventPrecision)}
+            </div>
+            <Show
+              when={h().post.bodyHtml}
+              fallback={<p class="tl__popup-empty">No description yet.</p>}
+            >
+              <div class="tl__popup-body" innerHTML={h().post.bodyHtml ?? ""} />
+            </Show>
+          </div>
+        )}
+      </Show>
 
       <Show when={editing()}>
         <div class="tl__drawer-backdrop" onClick={() => setEditing(null)}>

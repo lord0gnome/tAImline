@@ -296,11 +296,12 @@ a:hover {
   position: absolute;
   left: 0;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
   gap: 2px;
   padding: 0 0.6rem;
-  overflow: hidden;
+  overflow: visible;
   text-align: left;
   border: 1px solid color-mix(in oklab, var(--era-color) 70%, black);
   border-left: 4px solid var(--era-color);
@@ -326,18 +327,75 @@ a:hover {
 .tl__marker {
   transition: top 0.18s ease;
 }
+
+/* ---- moment hover popup ---- */
+.tl__popup {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  max-height: 280px;
+  overflow: hidden;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  transform-origin: top left;
+  animation: tl-pop 0.13s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes tl-pop {
+  from { opacity: 0; transform: scale(0.96) translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+.tl__popup::after {
+  /* soft fade at the bottom when content overflows */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.5rem;
+  background: linear-gradient(transparent, var(--surface));
+}
+.tl__popup-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.tl__popup-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.tl__popup-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  margin: 0;
+}
+.tl__popup-body {
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.tl__popup-body > :first-child {
+  margin-top: 0;
+}
+.tl__popup-body img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+}
 .tl__era-title {
   font-weight: 700;
   font-size: 0.85rem;
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
   text-overflow: ellipsis;
 }
 .tl__era-span {
   font-size: 0.72rem;
   color: var(--text-muted);
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
   text-overflow: ellipsis;
 }
 .tl__empty {
