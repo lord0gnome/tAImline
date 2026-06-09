@@ -17,11 +17,13 @@ import {
   toPostDTO,
   updatePost,
 } from "~/lib/posts.ts";
-import { attachMediaFromUrl } from "~/lib/media.ts";
+import { attachMediaFromUrl, deleteMedia, getOwnedMedia, listMediaByPost } from "~/lib/media.ts";
+import { getProfile, updateProfile } from "~/lib/profile.ts";
+import { createShare, listShares, revokeShare } from "~/lib/shares.ts";
 
 type UserRow = typeof users.$inferSelect;
 
-export const MCP_SERVER_INFO = { name: "taimline", version: "0.12.0" };
+export const MCP_SERVER_INFO = { name: "taimline", version: "0.13.0" };
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpTool {
@@ -88,6 +90,25 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: "update_profile",
+    description:
+      "Update the user's profile: displayName, handle, bio, birthDate (timeline anchor, YYYY-MM-DD), defaultVisibility.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        displayName: { type: "string" },
+        handle: { type: "string", description: "Public URL handle (a-z0-9-_)." },
+        bio: { type: "string" },
+        birthDate: { type: ["string", "null"], description: "YYYY-MM-DD or null." },
+        defaultVisibility: {
+          type: "string",
+          enum: ["private", "gated", "unlisted", "public"],
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_era",
     description:
       "Create a new era on the user's timeline. Eras may overlap; they stack into lanes automatically.",
@@ -95,6 +116,23 @@ export const MCP_TOOLS: McpTool[] = [
       type: "object",
       properties: eraProps,
       required: ["title", "startDate"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_eras",
+    description:
+      "Create MANY eras in one call. Pass an array; each is created independently and per-item errors are reported.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        eras: {
+          type: "array",
+          description: "Eras to create.",
+          items: { type: "object", properties: eraProps, required: ["title", "startDate"] },
+        },
+      },
+      required: ["eras"],
       additionalProperties: false,
     },
   },
@@ -133,11 +171,28 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "create_post",
     description:
-      "Add a dated moment (markdown story) to the timeline, optionally attached to an era by id.",
+      "Add a dated moment (markdown story) to the timeline, optionally attached to an era by id. Reference attached media in the body as ![caption](name).",
     inputSchema: {
       type: "object",
       properties: postProps,
       required: ["title", "eventDate"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_posts",
+    description:
+      "Create MANY moments in one call. Pass an array; each is created independently and per-item errors are reported.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        posts: {
+          type: "array",
+          description: "Moments to create.",
+          items: { type: "object", properties: postProps, required: ["title", "eventDate"] },
+        },
+      },
+      required: ["posts"],
       additionalProperties: false,
     },
   },
@@ -177,6 +232,57 @@ export const MCP_TOOLS: McpTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "list_media",
+    description: "List the media (images/videos) attached to a moment, with their reference names.",
+    inputSchema: {
+      type: "object",
+      properties: { postId: { type: "string" } },
+      required: ["postId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_media",
+    description: "Delete a media item by id (removes it from storage too).",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_shares",
+    description: "List who the user's timeline / eras are shared with.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "create_share",
+    description:
+      "Grant access to a gated era or the whole timeline, to a registered user (granteeHandle) or by email invite (inviteEmail).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scope: { type: "string", enum: ["timeline", "era"] },
+        eraId: { type: ["string", "null"], description: "Required when scope is 'era'." },
+        granteeHandle: { type: "string", description: "Existing user's handle (without @)." },
+        inviteEmail: { type: "string", description: "Email to invite (claimed on signup)." },
+      },
+      required: ["scope"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "revoke_share",
+    description: "Revoke a share grant by its id (from list_shares).",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export interface ToolResult {
@@ -193,12 +299,12 @@ type Args = Record<string, unknown>;
 export async function callTool(user: UserRow, name: string, args: Args): Promise<ToolResult> {
   switch (name) {
     case "get_profile":
-      return ok({
-        handle: user.handle,
-        displayName: user.displayName,
-        birthDate: user.birthDate,
-        defaultVisibility: user.defaultVisibility,
-      });
+      return ok(getProfile(user.id));
+
+    case "update_profile": {
+      const r = updateProfile(user.id, args);
+      return r.ok ? ok({ profile: r.profile }) : err(r.error);
+    }
 
     case "list_timeline": {
       const from = typeof args.from === "string" ? args.from : undefined;
@@ -211,6 +317,19 @@ export async function callTool(user: UserRow, name: string, args: Args): Promise
       const parsed = parseEra(args);
       if (!parsed.ok) return err(parsed.error);
       return ok({ era: createEra(user.id, parsed.value) });
+    }
+
+    case "create_eras": {
+      const list = Array.isArray(args.eras) ? (args.eras as Args[]) : null;
+      if (!list) return err("`eras` must be an array.");
+      const created: unknown[] = [];
+      const errors: { index: number; error: string }[] = [];
+      list.forEach((item, index) => {
+        const parsed = parseEra(item);
+        if (!parsed.ok) errors.push({ index, error: parsed.error });
+        else created.push(createEra(user.id, parsed.value));
+      });
+      return { text: JSON.stringify({ created, errors }, null, 2), isError: errors.length > 0 };
     }
 
     case "update_era": {
@@ -244,6 +363,24 @@ export async function callTool(user: UserRow, name: string, args: Args): Promise
       return r.ok ? ok({ post: r.post }) : err(r.error);
     }
 
+    case "create_posts": {
+      const list = Array.isArray(args.posts) ? (args.posts as Args[]) : null;
+      if (!list) return err("`posts` must be an array.");
+      const created: unknown[] = [];
+      const errors: { index: number; error: string }[] = [];
+      list.forEach((item, index) => {
+        const parsed = parsePost(item);
+        if (!parsed.ok) {
+          errors.push({ index, error: parsed.error });
+          return;
+        }
+        const r = createPost(user.id, parsed.value);
+        if (r.ok) created.push(r.post);
+        else errors.push({ index, error: r.error });
+      });
+      return { text: JSON.stringify({ created, errors }, null, 2), isError: errors.length > 0 };
+    }
+
     case "update_post": {
       const id = typeof args.id === "string" ? args.id : "";
       const existing = getOwnedPost(user.id, id);
@@ -273,6 +410,33 @@ export async function callTool(user: UserRow, name: string, args: Args): Promise
         caption: typeof args.caption === "string" ? args.caption : null,
       });
       return r.ok ? ok({ media: r.media }) : err(r.error);
+    }
+
+    case "list_media": {
+      const postId = typeof args.postId === "string" ? args.postId : "";
+      if (!getOwnedPost(user.id, postId)) return err(`Post not found: ${postId}`);
+      return ok({ media: listMediaByPost(user.id, postId) });
+    }
+
+    case "delete_media": {
+      const id = typeof args.id === "string" ? args.id : "";
+      const row = getOwnedMedia(user.id, id);
+      if (!row) return err(`Media not found: ${id}`);
+      await deleteMedia(row);
+      return ok({ deleted: id });
+    }
+
+    case "list_shares":
+      return ok({ shares: listShares(user.id) });
+
+    case "create_share": {
+      const r = createShare(user.id, args);
+      return r.ok ? ok({ id: r.id }) : err(r.error);
+    }
+
+    case "revoke_share": {
+      const id = typeof args.id === "string" ? args.id : "";
+      return revokeShare(user.id, id) ? ok({ revoked: id }) : err(`Share not found: ${id}`);
     }
 
     default:
