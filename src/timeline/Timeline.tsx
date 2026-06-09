@@ -47,6 +47,7 @@ const Timeline: Component<Props> = (props) => {
   const [editingPost, setEditingPost] = createSignal<PostDTO | "new" | null>(null);
   const [detailEra, setDetailEra] = createSignal<EraDTO | null>(null);
   const [newPostEraId, setNewPostEraId] = createSignal<string | null>(null);
+  const [newEraStart, setNewEraStart] = createSignal<string | null>(null);
   const [focus, setFocus] = createSignal<Set<string>>(new Set());
   const [availH, setAvailH] = createSignal(480);
   const [hover, setHover] = createSignal<{ post: PostDTO; x: number; y: number } | null>(null);
@@ -126,6 +127,14 @@ const Timeline: Component<Props> = (props) => {
     }
   }
 
+  // Double-click an empty spot on the canvas → new era starting at that date.
+  function onCanvasDblClick(ev: MouseEvent) {
+    if (props.readOnly || !containerRef) return;
+    const x = ev.clientX - containerRef.getBoundingClientRect().left;
+    setNewEraStart(msToISO(Math.round(xToDate(x, vp()))));
+    setEditing("new");
+  }
+
   // Eras/posts currently on screen (all, or the focused subset).
   const shownEras = createMemo(() => computeShown(eras(), focus()));
   const shownPosts = createMemo(() => {
@@ -169,9 +178,6 @@ const Timeline: Component<Props> = (props) => {
   const contentHeight = () => lanesBottom() + (hasFreePosts() ? POST_ROW_H : 0);
   // In fill mode the canvas reaches the viewport bottom (grows if lanes exceed it).
   const canvasHeight = () => (props.fill ? Math.max(contentHeight(), availH()) : contentHeight());
-
-  // Marker vertical position: a pin atop its era's bar, or the free strip.
-  const postTop = (p: PostDTO) => (isFree(p) ? lanesBottom() + 4 : laneTop(p.eraId!) + 4);
 
   // Virtualized set of posts whose marker is within the viewport.
   const visiblePosts = createMemo(() => {
@@ -242,15 +248,15 @@ const Timeline: Component<Props> = (props) => {
   // Plain wheel scrolls the page (vertical). Ctrl/⌘+wheel zooms (cursor-
   // anchored), Shift+wheel pans through time — both smoothed via tweenTo.
   function onWheel(ev: WheelEvent) {
-    if (ev.ctrlKey || ev.metaKey) {
+    if (ev.shiftKey) {
+      ev.preventDefault();
+      const d = ev.deltaY || ev.deltaX;
+      tweenTo({ ...target, originMs: target.originMs + d / target.pxPerMs });
+    } else {
       ev.preventDefault();
       const rect = containerRef!.getBoundingClientRect();
       const anchorX = ev.clientX - rect.left;
       tweenTo(zoomAt(target, anchorX, Math.exp(-ev.deltaY * 0.002)));
-    } else if (ev.shiftKey) {
-      ev.preventDefault();
-      const d = ev.deltaY || ev.deltaX;
-      tweenTo({ ...target, originMs: target.originMs + d / target.pxPerMs });
     }
     // else: let the browser scroll vertically.
   }
@@ -436,7 +442,7 @@ const Timeline: Component<Props> = (props) => {
     <div class="tl" classList={{ "tl--fill": props.fill }}>
       <div class="tl__toolbar">
         <Show when={!props.readOnly}>
-          <button class="btn btn--primary" onClick={() => setEditing("new")}>
+          <button class="btn btn--primary" onClick={() => { setNewEraStart(null); setEditing("new"); }}>
             + New era
           </button>
           <button class="btn" onClick={() => addMomentTo(null)}>
@@ -477,6 +483,7 @@ const Timeline: Component<Props> = (props) => {
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
         onKeyDown={onKeyDown}
+        onDblClick={onCanvasDblClick}
       >
         {/* ruler */}
         <div class="tl__ruler" style={{ height: `${RULER_H}px` }}>
@@ -500,10 +507,7 @@ const Timeline: Component<Props> = (props) => {
             const startX = () => dateToX(toMs(e.startDate), vp());
             const w = () => Math.max(MIN_BAR_PX, dateToX(endMsOf(e), vp()) - startX());
             const dragging = () => dragLane()?.id === e.id;
-            const top = () =>
-              dragging()
-                ? dragLane()!.y - LANE_H / 2
-                : RULER_H + LANE_GAP + lanes().lanes[e.id] * (LANE_H + LANE_GAP);
+            const top = () => (dragging() ? dragLane()!.y - LANE_H / 2 : laneTop(e.id));
             return (
               <button
                 class="tl__era"
@@ -519,6 +523,7 @@ const Timeline: Component<Props> = (props) => {
                 onPointerMove={eraPointerMove}
                 onPointerUp={(ev) => eraPointerUp(ev, e)}
                 onClick={() => eraClick(e)}
+                onDblClick={(ev) => ev.stopPropagation()}
                 aria-label={`Era: ${e.title}, ${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)}`}
                 title={`${e.title} (${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)})`}
               >
@@ -531,26 +536,34 @@ const Timeline: Component<Props> = (props) => {
           }}
         </For>
 
-        {/* post markers */}
+        {/* moments: a 2px vertical line down the era at the moment's date */}
         <For each={visiblePosts()}>
-          {(p) => (
-            <button
-              class="tl__marker"
-              style={{
-                transform: `translateX(${dateToX(toMs(p.eventDate), vp())}px)`,
-                top: `${postTop(p)}px`,
-              }}
-              onPointerDown={(ev) => ev.stopPropagation()}
-              onClick={() => openPost(p)}
-              onMouseEnter={(ev) => setHover({ post: p, x: ev.clientX, y: ev.clientY })}
-              onMouseMove={(ev) => setHover({ post: p, x: ev.clientX, y: ev.clientY })}
-              onMouseLeave={() => setHover(null)}
-              aria-label={`Moment: ${p.title}, ${formatByPrecision(p.eventDate, p.eventPrecision)}`}
-            >
-              <span class="tl__marker-dot" />
-              <span class="tl__marker-label">{p.title}</span>
-            </button>
-          )}
+          {(p) => {
+            const free = () => isFree(p);
+            const top = () => (free() ? lanesBottom() + 2 : laneTop(p.eraId!));
+            const h = () => (free() ? 18 : LANE_H);
+            const color = () =>
+              free() ? "var(--accent)" : (eras().find((e) => e.id === p.eraId)?.color ?? "var(--accent)");
+            return (
+              <button
+                class="tl__moment"
+                style={{
+                  transform: `translateX(${dateToX(toMs(p.eventDate), vp()) - 3}px)`,
+                  top: `${top()}px`,
+                  height: `${h()}px`,
+                }}
+                onPointerDown={(ev) => ev.stopPropagation()}
+                onDblClick={(ev) => ev.stopPropagation()}
+                onClick={() => openPost(p)}
+                onMouseEnter={(ev) => setHover({ post: p, x: ev.clientX, y: ev.clientY })}
+                onMouseMove={(ev) => setHover({ post: p, x: ev.clientX, y: ev.clientY })}
+                onMouseLeave={() => setHover(null)}
+                aria-label={`Moment: ${p.title}, ${formatByPrecision(p.eventDate, p.eventPrecision)}`}
+              >
+                <span class="tl__moment-line" style={{ background: color() }} />
+              </button>
+            );
+          }}
         </For>
 
         <Show when={loaded() && eras().length === 0 && posts().length === 0}>
@@ -587,7 +600,7 @@ const Timeline: Component<Props> = (props) => {
           <div onClick={(ev) => ev.stopPropagation()}>
             <EraEditor
               era={editing() === "new" ? null : (editing() as EraDTO)}
-              defaultStart={defaultStart()}
+              defaultStart={newEraStart() ?? defaultStart()}
               onSaved={onSaved}
               onDeleted={onDeleted}
               onCancel={() => setEditing(null)}

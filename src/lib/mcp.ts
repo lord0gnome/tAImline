@@ -23,7 +23,7 @@ import { createShare, listShares, revokeShare } from "~/lib/shares.ts";
 
 type UserRow = typeof users.$inferSelect;
 
-export const MCP_SERVER_INFO = { name: "taimline", version: "0.13.0" };
+export const MCP_SERVER_INFO = { name: "taimline", version: "0.14.0" };
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpTool {
