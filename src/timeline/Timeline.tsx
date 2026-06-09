@@ -30,10 +30,25 @@ interface Props {
 }
 
 const RULER_H = 34;
-const LANE_H = 16;
 const LANE_GAP = 1;
 const MIN_BAR_PX = 4;
 const POST_ROW_H = 30; // free-floating posts strip at the bottom
+
+// Era bar (lane) height is user-adjustable via a step slider, persisted locally.
+const LANE_H_DEFAULT = 16;
+const LANE_H_MIN = 12;
+const LANE_H_MAX = 44;
+const LANE_H_STEP = 4;
+const LANE_H_KEY = "taimline-lane-h";
+function loadLaneH(): number {
+  try {
+    const v = Number(localStorage.getItem(LANE_H_KEY));
+    if (v >= LANE_H_MIN && v <= LANE_H_MAX) return v;
+  } catch {
+    /* no localStorage (SSR / private mode) */
+  }
+  return LANE_H_DEFAULT;
+}
 const PX_PER_MS_MIN = 5 / (3650 * MS_DAY); // ~5px per decade (max zoom-out)
 const PX_PER_MS_MAX = 200 / MS_DAY; // 200px per day (max zoom-in)
 
@@ -54,6 +69,7 @@ const Timeline: Component<Props> = (props) => {
   const [posts, setPosts] = createSignal<PostDTO[]>([]);
   const [vp, setVp] = createSignal<Viewport>({ originMs: Date.now(), pxPerMs: 1 });
   const [width, setWidth] = createSignal(800);
+  const [laneH, setLaneH] = createSignal(loadLaneH()); // era bar height (px)
   const [editing, setEditing] = createSignal<EraDTO | "new" | null>(null);
   const [editingPost, setEditingPost] = createSignal<PostDTO | "new" | null>(null);
   const [detailEra, setDetailEra] = createSignal<EraDTO | null>(null);
@@ -204,6 +220,15 @@ const Timeline: Component<Props> = (props) => {
     }
   });
 
+  // Persist the chosen era-bar height.
+  createEffect(() => {
+    try {
+      localStorage.setItem(LANE_H_KEY, String(laneH()));
+    } catch {
+      /* ignore */
+    }
+  });
+
   function openPost(p: PostDTO) {
     if (suppressTap) return; // tail end of a pinch — don't open
     if (props.readOnly) {
@@ -256,8 +281,8 @@ const Timeline: Component<Props> = (props) => {
   });
 
   const laneTop = (eraId: string) =>
-    RULER_H + LANE_GAP + lanes().lanes[eraId] * (LANE_H + LANE_GAP);
-  const lanesBottom = () => RULER_H + lanes().laneCount * (LANE_H + LANE_GAP) + LANE_GAP;
+    RULER_H + LANE_GAP + lanes().lanes[eraId] * (laneH() + LANE_GAP);
+  const lanesBottom = () => RULER_H + lanes().laneCount * (laneH() + LANE_GAP) + LANE_GAP;
 
   // A post is "free-floating" if it has no era or its era isn't on the timeline.
   const isFree = (p: PostDTO) => !p.eraId || lanes().lanes[p.eraId] === undefined;
@@ -539,7 +564,7 @@ const Timeline: Component<Props> = (props) => {
     if (dragId !== null && dragMoved && !pinchActive) {
       const y = ev.clientY - canvasTop;
       suppressClickId = e.id; // the click that follows shouldn't open the editor
-      const target = Math.round((y - RULER_H - LANE_GAP) / (LANE_H + LANE_GAP));
+      const target = Math.round((y - RULER_H - LANE_GAP) / (laneH() + LANE_GAP));
       const clamped = Math.max(0, Math.min(target, lanes().laneCount));
       if (clamped !== lanes().lanes[e.id]) void persistLane(e, clamped);
     }
@@ -674,6 +699,18 @@ const Timeline: Component<Props> = (props) => {
         <button class="btn" onClick={() => tweenTo(frame(shownEras(), width()))}>
           Fit
         </button>
+        <label class="tl__rowh" title="Era row height">
+          <span class="tl__rowh-icon" aria-hidden="true">⇕</span>
+          <input
+            type="range"
+            min={LANE_H_MIN}
+            max={LANE_H_MAX}
+            step={LANE_H_STEP}
+            value={laneH()}
+            aria-label="Era row height"
+            onInput={(ev) => setLaneH(Number(ev.currentTarget.value))}
+          />
+        </label>
         <Show
           when={focus().size > 0}
           fallback={
@@ -760,7 +797,7 @@ const Timeline: Component<Props> = (props) => {
             const startX = () => dateToX(toMs(e.startDate), vp());
             const w = () => Math.max(MIN_BAR_PX, dateToX(endMsOf(e), vp()) - startX());
             const dragging = () => dragLane()?.id === e.id;
-            const top = () => (dragging() ? dragLane()!.y - LANE_H / 2 : laneTop(e.id));
+            const top = () => (dragging() ? dragLane()!.y - laneH() / 2 : laneTop(e.id));
             return (
               <button
                 class="tl__era"
@@ -768,7 +805,7 @@ const Timeline: Component<Props> = (props) => {
                   transform: `translateX(${startX()}px)`,
                   top: `${top()}px`,
                   width: `${w()}px`,
-                  height: `${LANE_H}px`,
+                  height: `${laneH()}px`,
                   "--era-color": e.color ?? "var(--accent)",
                 }}
                 classList={{ "tl__era--focused": focus().has(e.id), "tl__era--dragging": dragging(), "tl__era--fresh": freshEraIds().has(e.id), "tl__era--dim": !eraMatches(e, highlight()) }}
@@ -795,7 +832,7 @@ const Timeline: Component<Props> = (props) => {
           {(p) => {
             const free = () => isFree(p);
             const top = () => (free() ? lanesBottom() + 2 : laneTop(p.eraId!));
-            const h = () => (free() ? 18 : LANE_H);
+            const h = () => (free() ? 18 : laneH());
             const color = () =>
               free() ? "var(--accent)" : (eras().find((e) => e.id === p.eraId)?.color ?? "var(--accent)");
             return (

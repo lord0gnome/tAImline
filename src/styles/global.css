@@ -258,6 +258,23 @@ a:hover {
   color: #fff;
   font-weight: 600;
 }
+
+/* Era row-height step slider */
+.tl__rowh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-muted);
+}
+.tl__rowh-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.tl__rowh input[type="range"] {
+  width: 84px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 .tl__focus {
   display: flex;
   align-items: center;

@@ -25,7 +25,7 @@ import { createShare, listShares, revokeShare } from "~/lib/shares.ts";
 
 type UserRow = typeof users.$inferSelect;
 
-export const MCP_SERVER_INFO = { name: "taimline", version: "0.16.0" };
+export const MCP_SERVER_INFO = { name: "taimline", version: "0.17.0" };
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpTool {
@@ -160,11 +160,14 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "update_era",
-    description: "Update an existing era by id. Provide the full intended set of fields.",
+    description:
+      "Edit an existing era by id. Provide ONLY the fields you want to change; " +
+      "omitted fields keep their current values. To clear the end date (make it " +
+      "ongoing) pass endDate: null; to clear categories pass an empty array.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" }, ...eraProps },
-      required: ["id", "title", "startDate"],
+      required: ["id"],
       additionalProperties: false,
     },
   },
@@ -224,11 +227,14 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "update_post",
-    description: "Update a moment by id. Provide the full intended set of fields.",
+    description:
+      "Edit a moment by id. Provide ONLY the fields you want to change; omitted " +
+      "fields keep their current values. To move it to another era pass eraId/" +
+      "eraSlug/eraTitle; to detach it pass eraId: null.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" }, ...postProps },
-      required: ["id", "title", "eventDate"],
+      required: ["id"],
       additionalProperties: false,
     },
   },
@@ -350,6 +356,41 @@ function resolvePostEra(userId: string, args: Args): string | null {
   return null; // no era reference at all — free-floating
 }
 
+const has = (args: Args, key: string) => Object.prototype.hasOwnProperty.call(args, key);
+
+/** Overlay the provided args onto an era's current values, so update_era can
+ *  patch single fields without wiping the rest. */
+function mergeEra(existing: Parameters<typeof updateEra>[0], args: Args) {
+  const cur = toEraDTO(existing);
+  return {
+    title: has(args, "title") ? args.title : cur.title,
+    descriptionMd: has(args, "descriptionMd") ? args.descriptionMd : cur.descriptionMd,
+    startDate: has(args, "startDate") ? args.startDate : cur.startDate,
+    startPrecision: has(args, "startPrecision") ? args.startPrecision : cur.startPrecision,
+    endDate: has(args, "endDate") ? args.endDate : cur.endDate,
+    endPrecision: has(args, "endPrecision") ? args.endPrecision : cur.endPrecision,
+    color: has(args, "color") ? args.color : cur.color,
+    categories: has(args, "categories") ? args.categories : cur.categories,
+    visibility: has(args, "visibility") ? args.visibility : cur.visibility,
+  };
+}
+
+/** Overlay provided args onto a moment's current values for partial updates.
+ *  Call after resolvePostEra so a provided eraSlug/eraTitle has set args.eraId. */
+function mergePost(existing: Parameters<typeof updatePost>[0], args: Args) {
+  const cur = toPostDTO(existing);
+  return {
+    title: has(args, "title") ? args.title : cur.title,
+    bodyMd: has(args, "bodyMd") ? args.bodyMd : cur.bodyMd,
+    eraId: has(args, "eraId") ? args.eraId : cur.eraId,
+    categories: has(args, "categories") ? args.categories : cur.categories,
+    eventDate: has(args, "eventDate") ? args.eventDate : cur.eventDate,
+    eventPrecision: has(args, "eventPrecision") ? args.eventPrecision : cur.eventPrecision,
+    eventEndDate: has(args, "eventEndDate") ? args.eventEndDate : cur.eventEndDate,
+    visibility: has(args, "visibility") ? args.visibility : cur.visibility,
+  };
+}
+
 /** Execute a tool on behalf of `user`. Never throws; returns isError instead. */
 export async function callTool(user: UserRow, name: string, args: Args): Promise<ToolResult> {
   switch (name) {
@@ -391,7 +432,7 @@ export async function callTool(user: UserRow, name: string, args: Args): Promise
       const id = typeof args.id === "string" ? args.id : "";
       const existing = getOwnedEra(user.id, id);
       if (!existing) return err(`Era not found: ${id}`);
-      const parsed = parseEra(args);
+      const parsed = parseEra(mergeEra(existing, args));
       if (!parsed.ok) return err(parsed.error);
       return ok({ era: updateEra(existing, parsed.value) });
     }
@@ -446,7 +487,7 @@ export async function callTool(user: UserRow, name: string, args: Args): Promise
       if (!existing) return err(`Post not found: ${id}`);
       const eraErr = resolvePostEra(user.id, args);
       if (eraErr) return err(eraErr);
-      const parsed = parsePost(args);
+      const parsed = parsePost(mergePost(existing, args));
       if (!parsed.ok) return err(parsed.error);
       const r = updatePost(existing, parsed.value);
       return r.ok ? ok({ post: r.post }) : err(r.error);
