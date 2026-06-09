@@ -583,7 +583,7 @@ const Timeline: Component<Props> = (props) => {
       </Show>
 
       <Show when={editing()}>
-        <div class="tl__drawer-backdrop" onClick={() => setEditing(null)}>
+        <div class="tl__modal-backdrop" onClick={() => setEditing(null)}>
           <div onClick={(ev) => ev.stopPropagation()}>
             <EraEditor
               era={editing() === "new" ? null : (editing() as EraDTO)}
@@ -597,7 +597,7 @@ const Timeline: Component<Props> = (props) => {
       </Show>
 
       <Show when={editingPost()}>
-        <div class="tl__drawer-backdrop" onClick={() => setEditingPost(null)}>
+        <div class="tl__modal-backdrop" onClick={() => setEditingPost(null)}>
           <div onClick={(ev) => ev.stopPropagation()}>
             <PostEditor
               post={editingPost() === "new" ? null : (editingPost() as PostDTO)}

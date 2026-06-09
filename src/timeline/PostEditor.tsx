@@ -42,6 +42,24 @@ const PostEditor: Component<Props> = (props) => {
     }
   });
 
+  // Mirror the server's media-name slug so a pending reference matches on save.
+  function slugName(filename: string): string {
+    return (
+      filename
+        .toLowerCase()
+        .replace(/\.[a-z0-9]+$/i, "")
+        .normalize("NFKD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40) || "media"
+    );
+  }
+  function insertRef(name: string) {
+    if (!name) return;
+    setBody((b) => `${b}${b && !b.endsWith("\n") ? "\n\n" : ""}![${name}](${name})\n`);
+  }
+
   async function addFiles(files: FileList | null) {
     if (!files) return;
     setUploading(true);
@@ -103,6 +121,7 @@ const PostEditor: Component<Props> = (props) => {
           storageKey: up.storageKey,
           thumbKey: up.thumbKey,
           mime: up.mime,
+          name: up.name,
           width: up.width,
           height: up.height,
         }),
@@ -184,6 +203,10 @@ const PostEditor: Component<Props> = (props) => {
           <Show when={uploading()}>
             <p class="muted" style={{ "font-size": "0.8rem" }}>Uploading…</p>
           </Show>
+          <p class="muted" style={{ "font-size": "0.78rem", margin: "0.25rem 0 0.5rem" }}>
+            Click <strong>insert</strong> (or use the name) to drop a photo/video into your
+            story: <code>![caption](name)</code>.
+          </p>
           <div class="gallery">
             <For each={existing()}>
               {(m) => (
@@ -194,6 +217,14 @@ const PostEditor: Component<Props> = (props) => {
                     <img src={m.thumbUrl} alt={m.alt ?? ""} loading="lazy" />
                   )}
                   <button type="button" class="gallery__x" onClick={() => removeExisting(m)}>×</button>
+                  <button
+                    type="button"
+                    class="gallery__insert"
+                    title={`Insert ![](${m.name ?? ""})`}
+                    onClick={() => insertRef(m.name ?? "")}
+                  >
+                    {m.name ?? "media"} · insert
+                  </button>
                 </div>
               )}
             </For>
@@ -206,6 +237,14 @@ const PostEditor: Component<Props> = (props) => {
                     <img src={u.previewUrl} alt="" />
                   )}
                   <button type="button" class="gallery__x" onClick={() => removePending(i())}>×</button>
+                  <button
+                    type="button"
+                    class="gallery__insert"
+                    title={`Insert ![](${slugName(u.name)})`}
+                    onClick={() => insertRef(slugName(u.name))}
+                  >
+                    {slugName(u.name)} · insert
+                  </button>
                 </div>
               )}
             </For>

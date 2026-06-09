@@ -42,12 +42,20 @@ const absImage = ogImage && base && ogImage.startsWith("/") ? `${base}${ogImage}
     {absImage && <meta property="og:image" content={absImage} />}
     <meta name="twitter:card" content={absImage ? "summary_large_image" : "summary"} />
     <title>{title}</title>
+    <script is:inline>
+      // Apply the saved theme before paint to avoid a flash.
+      try {
+        const t = localStorage.getItem("taimline-theme");
+        if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+      } catch (_) {}
+    </script>
   </head>
   <body class={fullBleed ? "body--full" : undefined}>
     <header class="site-header">
       <div class="container site-header__inner">
         <a class="brand" href="/">t<b>AI</b>mline</a>
         <nav style="display: flex; align-items: center; gap: 0.75rem;">
+          <button id="theme-toggle" class="btn" type="button" aria-label="Toggle theme" title="Theme">🖥</button>
           {
             user ? (
               <>
@@ -79,5 +87,34 @@ const absImage = ogImage && base && ogImage.startsWith("/") ? `${base}${ogImage}
         </footer>
       )
     }
+    <script is:inline>
+      // Theme toggle: cycles system → light → dark, persisted in localStorage.
+      (() => {
+        const btn = document.getElementById("theme-toggle");
+        if (!btn) return;
+        const order = ["system", "light", "dark"];
+        const icon = { system: "🖥", light: "☀️", dark: "🌙" };
+        const cur = () => {
+          let t;
+          try { t = localStorage.getItem("taimline-theme"); } catch (_) {}
+          return order.includes(t) ? t : "system";
+        };
+        const apply = (t) => {
+          try {
+            if (t === "system") {
+              delete document.documentElement.dataset.theme;
+              localStorage.removeItem("taimline-theme");
+            } else {
+              document.documentElement.dataset.theme = t;
+              localStorage.setItem("taimline-theme", t);
+            }
+          } catch (_) {}
+          btn.textContent = icon[t];
+          btn.title = "Theme: " + t;
+        };
+        apply(cur());
+        btn.addEventListener("click", () => apply(order[(order.indexOf(cur()) + 1) % order.length]));
+      })();
+    </script>
   </body>
 </html>

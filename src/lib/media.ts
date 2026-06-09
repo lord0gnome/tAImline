@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "~/db/client.ts";
-import { media } from "~/db/schema.ts";
+import { media, posts } from "~/db/schema.ts";
 import { getOwnedPost } from "~/lib/posts.ts";
+import { renderPostBody } from "~/lib/postRender.ts";
 import { deleteObject, putObject, storageConfigured } from "~/storage/s3.ts";
 
 type MediaRow = typeof media.$inferSelect;
@@ -20,6 +21,8 @@ export interface MediaDTO {
   postId: string | null;
   mime: string | null;
   kind: MediaKind;
+  /** Clean reference name to use in markdown: ![caption](name). */
+  name: string | null;
   width: number | null;
   height: number | null;
   alt: string | null;
@@ -35,6 +38,7 @@ export function toMediaDTO(row: MediaRow): MediaDTO {
     postId: row.postId,
     mime: row.mime,
     kind: kindOf(row.mime),
+    name: row.name,
     width: row.width,
     height: row.height,
     alt: row.alt,
@@ -49,10 +53,54 @@ export interface RegisterMediaInput {
   storageKey: string;
   thumbKey?: string | null;
   mime?: string | null;
+  name?: string | null;
   width?: number | null;
   height?: number | null;
   alt?: string | null;
   caption?: string | null;
+}
+
+function slugifyName(input: string): string {
+  return (
+    input
+      .toLowerCase()
+      .replace(/\.[a-z0-9]+$/i, "") // drop extension
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "media"
+  );
+}
+
+function uniqueMediaName(postId: string | null, base: string, kind: MediaKind): string {
+  const root = slugifyName(base) || (kind === "video" ? "video" : "image");
+  if (!postId) return root;
+  let candidate = root;
+  let n = 1;
+  while (
+    db
+      .select({ id: media.id })
+      .from(media)
+      .where(and(eq(media.postId, postId), eq(media.name, candidate)))
+      .get()
+  ) {
+    n += 1;
+    candidate = `${root}-${n}`;
+  }
+  return candidate;
+}
+
+/** Recompute a post's cached HTML so markdown media references resolve. */
+function rerenderPost(postId: string): void {
+  const post = db.select().from(posts).where(eq(posts.id, postId)).get();
+  if (!post) return;
+  const refs = db
+    .select({ id: media.id, name: media.name, mime: media.mime })
+    .from(media)
+    .where(eq(media.postId, postId))
+    .all();
+  db.update(posts).set({ bodyHtml: renderPostBody(post.bodyMd, refs) }).where(eq(posts.id, postId)).run();
 }
 
 export function registerMedia(
@@ -70,6 +118,8 @@ export function registerMedia(
   }
 
   const id = randomUUID();
+  const kind = kindOf(input.mime ?? null);
+  const name = uniqueMediaName(input.postId ?? null, input.name?.trim() || kind, kind);
   const row: typeof media.$inferInsert = {
     id,
     userId,
@@ -77,12 +127,14 @@ export function registerMedia(
     storageKey: input.storageKey,
     thumbKey: input.thumbKey ?? null,
     mime: input.mime ?? null,
+    name,
     width: input.width ?? null,
     height: input.height ?? null,
     alt: input.alt ?? null,
     caption: input.caption ?? null,
   };
   db.insert(media).values(row).run();
+  if (input.postId) rerenderPost(input.postId); // resolve any markdown references
   return { ok: true, media: toMediaDTO(db.select().from(media).where(eq(media.id, id)).get()!) };
 }
 
@@ -111,6 +163,7 @@ export async function deleteMedia(row: MediaRow): Promise<void> {
   await deleteObject(row.storageKey).catch(() => {});
   if (row.thumbKey) await deleteObject(row.thumbKey).catch(() => {});
   db.delete(media).where(eq(media.id, row.id)).run();
+  if (row.postId) rerenderPost(row.postId); // drop any now-broken references
 }
 
 /** Generate a namespaced object key for an upload under the user's prefix. */
@@ -168,5 +221,6 @@ export async function attachMediaFromUrl(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
   }
-  return registerMedia(userId, { postId: input.postId, storageKey: key, mime });
+  const base = input.url.split("/").pop()?.split("?")[0] || "media";
+  return registerMedia(userId, { postId: input.postId, storageKey: key, mime, name: base, alt: input.alt, caption: input.caption });
 }

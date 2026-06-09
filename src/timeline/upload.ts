@@ -10,6 +10,8 @@ export interface UploadedMedia {
   storageKey: string;
   thumbKey: string | null;
   mime: string;
+  /** Original filename — becomes the clean markdown reference name. */
+  name: string;
   width: number | null;
   height: number | null;
   /** Local object URL for instant preview before the post is saved. */
@@ -71,6 +73,7 @@ async function processImage(file: File): Promise<UploadedMedia> {
     storageKey,
     thumbKey,
     mime: "image/jpeg",
+    name: file.name,
     width: full.width,
     height: full.height,
     previewUrl: URL.createObjectURL(full.blob),
@@ -107,6 +110,7 @@ async function processVideo(file: File): Promise<UploadedMedia> {
     storageKey,
     thumbKey,
     mime: file.type,
+    name: file.name,
     width: null,
     height: null,
     previewUrl: URL.createObjectURL(file),

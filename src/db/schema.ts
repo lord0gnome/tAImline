@@ -179,6 +179,8 @@ export const media = sqliteTable(
     storageKey: text("storage_key").notNull(),
     /** Object key of the generated thumbnail (image downscale or video poster). */
     thumbKey: text("thumb_key"),
+    /** Clean per-post reference name used in markdown, e.g. ![cap](beach-sunset). */
+    name: text("name"),
     publicUrl: text("public_url"),
     thumbUrl: text("thumb_url"),
     width: integer("width"),

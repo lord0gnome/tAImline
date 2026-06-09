@@ -1,11 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { db } from "~/db/client.ts";
-import { ERA_VISIBILITIES, type EraVisibility, PRECISIONS, type Precision, posts } from "~/db/schema.ts";
+import { ERA_VISIBILITIES, type EraVisibility, PRECISIONS, type Precision, media, posts } from "~/db/schema.ts";
 import { isValidISODate } from "~/lib/dates.ts";
 import { getOwnedEra } from "~/lib/eras.ts";
-import { renderMarkdown } from "~/lib/markdown.ts";
+import { renderPostBody } from "~/lib/postRender.ts";
 import type { PostDTO } from "~/timeline/types.ts";
+
+/** Media (id/name/mime) attached to a post, for resolving markdown references. */
+function postMediaRefs(postId: string) {
+  return db
+    .select({ id: media.id, name: media.name, mime: media.mime })
+    .from(media)
+    .where(eq(media.postId, postId))
+    .all();
+}
 
 type PostRow = typeof posts.$inferSelect;
 
@@ -153,7 +162,7 @@ export function createPost(
     title: value.title,
     slug: uniqueSlug(userId, value.title),
     bodyMd: value.bodyMd,
-    bodyHtml: renderMarkdown(value.bodyMd),
+    bodyHtml: renderPostBody(value.bodyMd, []), // media (if any) attaches after; re-rendered then
     eventDate: value.eventDate,
     eventPrecision: value.eventPrecision,
     eventEndDate: value.eventEndDate,
@@ -192,7 +201,7 @@ export function updatePost(
       title: value.title,
       slug,
       bodyMd: value.bodyMd,
-      bodyHtml: renderMarkdown(value.bodyMd),
+      bodyHtml: renderPostBody(value.bodyMd, postMediaRefs(existing.id)),
       eventDate: value.eventDate,
       eventPrecision: value.eventPrecision,
       eventEndDate: value.eventEndDate,
