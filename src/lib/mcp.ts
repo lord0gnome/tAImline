@@ -50,7 +50,11 @@ const eraProps = {
   },
   endPrecision: precision,
   color: { type: "string", description: "Hex color like #4a6fa5." },
-  category: { type: "string", description: "Optional grouping, e.g. 'Career'." },
+  categories: {
+    type: "array",
+    items: { type: "string" },
+    description: "Tag-like groupings, e.g. ['Career', 'Travel']. Free-form.",
+  },
   visibility,
   descriptionMd: { type: "string", description: "Markdown description / notes." },
 };
@@ -78,6 +82,11 @@ const postProps = {
   eventEndDate: {
     type: ["string", "null"],
     description: "End date YYYY-MM-DD for a span, or null/omitted for a point in time.",
+  },
+  categories: {
+    type: "array",
+    items: { type: "string" },
+    description: "Tag-like groupings, e.g. ['Career', 'Travel']. Free-form.",
   },
   visibility,
 };

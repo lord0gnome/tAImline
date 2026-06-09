@@ -8,7 +8,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
-import { formatByPrecision, formatSpan, MS_DAY, msToISO, toMs } from "~/lib/dates.ts";
+import { formatByPrecision, formatSpan, MS_DAY, msToISO, type Precision, toMs } from "~/lib/dates.ts";
 import EraEditor from "./EraEditor.tsx";
 import EraDetail from "./EraDetail.tsx";
 import PostEditor from "./PostEditor.tsx";
@@ -39,6 +39,16 @@ const PX_PER_MS_MAX = 200 / MS_DAY; // 200px per day (max zoom-in)
 
 const clampZoom = (v: number) => Math.min(PX_PER_MS_MAX, Math.max(PX_PER_MS_MIN, v));
 
+/** Finest date precision the user can target at this zoom: a unit must be wide
+ *  enough on screen to point at. Used for the cursor chip + dates created by
+ *  double-clicking the canvas. */
+function precisionForZoom(pxPerMs: number): Precision {
+  const pxPerDay = pxPerMs * MS_DAY;
+  if (pxPerDay >= 3) return "day"; // a day is ≥3px wide → pick a day
+  if (pxPerDay * 30 >= 4) return "month"; // a month is ≥4px wide → pick a month
+  return "year";
+}
+
 const Timeline: Component<Props> = (props) => {
   const [eras, setEras] = createSignal<EraDTO[]>([]);
   const [posts, setPosts] = createSignal<PostDTO[]>([]);
@@ -47,17 +57,34 @@ const Timeline: Component<Props> = (props) => {
   const [editing, setEditing] = createSignal<EraDTO | "new" | null>(null);
   const [editingPost, setEditingPost] = createSignal<PostDTO | "new" | null>(null);
   const [detailEra, setDetailEra] = createSignal<EraDTO | null>(null);
+  const [readingPost, setReadingPost] = createSignal<PostDTO | null>(null);
   const [newPostEraId, setNewPostEraId] = createSignal<string | null>(null);
+  const [newPostDate, setNewPostDate] = createSignal<string | null>(null);
+  const [newPostPrecision, setNewPostPrecision] = createSignal<Precision | null>(null);
   const [newEraStart, setNewEraStart] = createSignal<string | null>(null);
+  // "edit" exposes click-to-edit etc.; "view" is a read preview (no accidental
+  // edits). Public timelines (readOnly) are always viewing.
+  const [mode, setMode] = createSignal<"edit" | "view">("edit");
   const [focus, setFocus] = createSignal<Set<string>>(new Set());
+  // Category highlight: selected tags (lowercased) dim non-matching items.
+  const [highlight, setHighlight] = createSignal<Set<string>>(new Set());
   const [availH, setAvailH] = createSignal(480);
   const [hover, setHover] = createSignal<{ post: PostDTO; x: number; y: number } | null>(null);
+  // The date under the cursor, shown in a small chip while hovering.
+  const [cursor, setCursor] = createSignal<{ x: number; y: number; iso: string } | null>(null);
   const [loaded, setLoaded] = createSignal(false);
   const [stale, setStale] = createSignal(false);
   const [freshEraIds, setFreshEraIds] = createSignal<Set<string>>(new Set());
 
   let containerRef: HTMLDivElement | undefined;
   const nowMs = Date.now();
+
+  // Viewing = read preview (public, or the in-app "view" mode). Editable is the
+  // inverse and gates every mutating interaction.
+  const viewing = () => props.readOnly || mode() === "view";
+  const editable = () => !viewing();
+  // Pending single-click action, deferred so a double-click can cancel it.
+  let eraClickTimer: ReturnType<typeof setTimeout> | undefined;
 
   const endMsOf = (e: EraDTO) => (e.endDate ? toMs(e.endDate) : nowMs);
   const overlaps = (a: EraDTO, b: EraDTO) =>
@@ -125,7 +152,21 @@ const Timeline: Component<Props> = (props) => {
     measure();
     const onResize = () => measure();
     window.addEventListener("resize", onResize);
-    onCleanup(() => window.removeEventListener("resize", onResize));
+    // Escape closes the top-most editor / drawer.
+    const onEsc = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape") return;
+      if (editingPost()) setEditingPost(null);
+      else if (editing()) setEditing(null);
+      else if (readingPost()) setReadingPost(null);
+      else if (detailEra()) setDetailEra(null);
+      else return;
+      ev.stopPropagation();
+    };
+    window.addEventListener("keydown", onEsc);
+    onCleanup(() => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onEsc);
+    });
     if (props.readOnly) {
       // Public view: data is provided; no API fetch.
       setEras(props.initialEras ?? []);
@@ -166,6 +207,8 @@ const Timeline: Component<Props> = (props) => {
   function openPost(p: PostDTO) {
     if (props.readOnly) {
       if (props.ownerHandle) location.href = `/u/${props.ownerHandle}/post/${p.slug}`;
+    } else if (mode() === "view") {
+      setReadingPost(p);
     } else {
       setEditingPost(p);
     }
@@ -173,7 +216,7 @@ const Timeline: Component<Props> = (props) => {
 
   // Double-click an empty spot on the canvas → new era starting at that date.
   function onCanvasDblClick(ev: MouseEvent) {
-    if (props.readOnly || !containerRef) return;
+    if (!editable() || !containerRef) return;
     const x = ev.clientX - containerRef.getBoundingClientRect().left;
     setNewEraStart(msToISO(Math.round(xToDate(x, vp()))));
     setEditing("new");
@@ -232,6 +275,36 @@ const Timeline: Component<Props> = (props) => {
       return x >= -20 && x <= w + 20;
     });
   });
+
+  // ---- category highlight ----------------------------------------------
+  // Distinct categories across eras + posts, canonical-cased, sorted.
+  const allCategories = createMemo(() => {
+    const map = new Map<string, string>(); // lowercase -> first-seen display
+    const add = (cats: string[]) => {
+      for (const c of cats) if (!map.has(c.toLowerCase())) map.set(c.toLowerCase(), c);
+    };
+    eras().forEach((e) => add(e.categories));
+    posts().forEach((p) => add(p.categories));
+    return [...map.values()].sort((a, b) => a.localeCompare(b));
+  });
+
+  const eraMatches = (e: EraDTO, h: Set<string>) =>
+    h.size === 0 || e.categories.some((c) => h.has(c.toLowerCase()));
+  // A post inherits its era's categories for highlighting, so tagging an era
+  // also lights up its moments.
+  const postMatches = (p: PostDTO, h: Set<string>) => {
+    if (h.size === 0) return true;
+    if (p.categories.some((c) => h.has(c.toLowerCase()))) return true;
+    const e = p.eraId ? eras().find((x) => x.id === p.eraId) : undefined;
+    return !!e && e.categories.some((c) => h.has(c.toLowerCase()));
+  };
+
+  function toggleHighlight(cat: string) {
+    const key = cat.toLowerCase();
+    const h = new Set(highlight());
+    h.has(key) ? h.delete(key) : h.add(key);
+    setHighlight(h);
+  }
 
   // ---- focus controls ---------------------------------------------------
   function applyFocus(f: Set<string>) {
@@ -324,6 +397,11 @@ const Timeline: Component<Props> = (props) => {
     else if (pointers.size === 2) pinchDist = dist();
   }
   function onPointerMove(ev: PointerEvent) {
+    // Track the day under the cursor for the date tooltip (mouse hover, no drag).
+    if (ev.pointerType !== "touch" && containerRef) {
+      const lx = ev.clientX - containerRef.getBoundingClientRect().left;
+      setCursor({ x: ev.clientX, y: ev.clientY, iso: msToISO(Math.round(xToDate(lx, vp()))) });
+    }
     if (!pointers.has(ev.pointerId)) return;
     pointers.set(ev.pointerId, ev.clientX);
     const rect = containerRef!.getBoundingClientRect();
@@ -387,7 +465,8 @@ const Timeline: Component<Props> = (props) => {
 
   function eraPointerDown(ev: PointerEvent, e: EraDTO) {
     ev.stopPropagation(); // don't pan the canvas
-    if (props.readOnly) return;
+    clearTimeout(eraClickTimer); // cancel any pending single-click edit
+    if (!editable()) return;
     canvasTop = containerRef!.getBoundingClientRect().top;
     dragId = e.id;
     dragStartY = ev.clientY;
@@ -419,7 +498,23 @@ const Timeline: Component<Props> = (props) => {
       suppressClickId = null;
       return;
     }
-    setDetailEra(e);
+    // View mode: open the read drawer immediately. Edit mode: open the editor,
+    // but defer so a double-click (→ add moment) can cancel it first.
+    if (!editable()) {
+      setDetailEra(e);
+      return;
+    }
+    clearTimeout(eraClickTimer);
+    eraClickTimer = setTimeout(() => setEditing(e), 240);
+  }
+
+  // Double-click an era → new moment attached to it, dated where you clicked.
+  function eraDblClick(ev: MouseEvent, e: EraDTO) {
+    ev.stopPropagation();
+    if (!editable() || !containerRef) return;
+    clearTimeout(eraClickTimer);
+    const x = ev.clientX - containerRef.getBoundingClientRect().left;
+    addMomentTo(e.id, msToISO(Math.round(xToDate(x, vp()))), precisionForZoom(vp().pxPerMs));
   }
   async function persistLane(e: EraDTO, lane: number) {
     setEras((prev) => prev.map((x) => (x.id === e.id ? { ...x, lane } : x))); // optimistic
@@ -459,10 +554,14 @@ const Timeline: Component<Props> = (props) => {
     setEditing(null);
   }
 
-  // Open a fresh moment editor pre-attached to an era.
-  function addMomentTo(eraId: string | null) {
+  // Open a fresh moment editor pre-attached to an era, optionally at a date
+  // (with the precision that zoom level affords).
+  function addMomentTo(eraId: string | null, date?: string, precision?: Precision) {
     setNewPostEraId(eraId);
+    setNewPostDate(date ?? null);
+    setNewPostPrecision(precision ?? null);
     setDetailEra(null);
+    setEditing(null);
     setEditingPost("new");
   }
   const postsInEra = (eraId: string) => posts().filter((p) => p.eraId === eraId);
@@ -485,9 +584,19 @@ const Timeline: Component<Props> = (props) => {
   const todayX = () => dateToX(nowMs, vp());
 
   return (
-    <div class="tl" classList={{ "tl--fill": props.fill }}>
+    <div class="tl" classList={{ "tl--fill": props.fill, "tl--edit": editable() }}>
       <div class="tl__toolbar">
         <Show when={!props.readOnly}>
+          <div class="tl__mode" role="group" aria-label="Timeline mode">
+            <button class="tl__mode-btn" classList={{ "tl__mode-btn--on": mode() === "edit" }} aria-pressed={mode() === "edit"} onClick={() => setMode("edit")}>
+              Edit
+            </button>
+            <button class="tl__mode-btn" classList={{ "tl__mode-btn--on": mode() === "view" }} aria-pressed={mode() === "view"} onClick={() => setMode("view")}>
+              View
+            </button>
+          </div>
+        </Show>
+        <Show when={editable()}>
           <button class="btn btn--primary" onClick={() => { setNewEraStart(null); setEditing("new"); }}>
             + New era
           </button>
@@ -500,7 +609,13 @@ const Timeline: Component<Props> = (props) => {
         </button>
         <Show
           when={focus().size > 0}
-          fallback={<span class="tl__hint muted">drag to pan · scroll to move · ⌘/Ctrl+scroll to zoom</span>}
+          fallback={
+            <span class="tl__hint muted">
+              {editable()
+                ? "click to edit · double-click an era to add a moment · double-click empty space for a new era"
+                : "drag to pan · scroll to move · ⌘/Ctrl+scroll to zoom"}
+            </span>
+          }
         >
           <span class="tl__focus">
             <span class="muted">Focusing:</span>
@@ -516,6 +631,30 @@ const Timeline: Component<Props> = (props) => {
         </Show>
       </div>
 
+      <Show when={allCategories().length > 0}>
+        <div class="tl__cats">
+          <span class="muted tl__cats-label">Tags:</span>
+          <For each={allCategories()}>
+            {(c) => (
+              <button
+                type="button"
+                class="tl__cat"
+                classList={{ "tl__cat--on": highlight().has(c.toLowerCase()) }}
+                onClick={() => toggleHighlight(c)}
+                aria-pressed={highlight().has(c.toLowerCase())}
+              >
+                {c}
+              </button>
+            )}
+          </For>
+          <Show when={highlight().size > 0}>
+            <button type="button" class="tl__cats-clear" onClick={() => setHighlight(new Set())}>
+              clear
+            </button>
+          </Show>
+        </div>
+      </Show>
+
       <div
         class="tl__canvas"
         ref={containerRef}
@@ -527,7 +666,7 @@ const Timeline: Component<Props> = (props) => {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        onPointerLeave={(ev) => { onPointerUp(ev); setCursor(null); }}
         onKeyDown={onKeyDown}
         onDblClick={onCanvasDblClick}
       >
@@ -564,12 +703,12 @@ const Timeline: Component<Props> = (props) => {
                   height: `${LANE_H}px`,
                   "--era-color": e.color ?? "var(--accent)",
                 }}
-                classList={{ "tl__era--focused": focus().has(e.id), "tl__era--dragging": dragging(), "tl__era--fresh": freshEraIds().has(e.id) }}
+                classList={{ "tl__era--focused": focus().has(e.id), "tl__era--dragging": dragging(), "tl__era--fresh": freshEraIds().has(e.id), "tl__era--dim": !eraMatches(e, highlight()) }}
                 onPointerDown={(ev) => eraPointerDown(ev, e)}
                 onPointerMove={eraPointerMove}
                 onPointerUp={(ev) => eraPointerUp(ev, e)}
                 onClick={() => eraClick(e)}
-                onDblClick={(ev) => ev.stopPropagation()}
+                onDblClick={(ev) => eraDblClick(ev, e)}
                 aria-label={`Era: ${e.title}, ${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)}`}
                 title={`${e.title} (${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)})`}
               >
@@ -593,6 +732,7 @@ const Timeline: Component<Props> = (props) => {
             return (
               <button
                 class="tl__moment"
+                classList={{ "tl__moment--dim": !postMatches(p, highlight()) }}
                 style={{
                   transform: `translateX(${dateToX(toMs(p.eventDate), vp()) - 3}px)`,
                   top: `${top()}px`,
@@ -616,6 +756,25 @@ const Timeline: Component<Props> = (props) => {
           <p class="tl__empty muted">No eras yet — add the first chapter of your life.</p>
         </Show>
       </div>
+
+      {/* floating chip that follows the cursor and shows the date under it, at
+          the finest precision this zoom allows. In edit mode it gains a "+" to
+          cue double-click-to-add. Hidden while a moment preview is showing. */}
+      <Show when={cursor() && !hover() && !editing() && !editingPost() && !detailEra() && !readingPost()}>
+        <div
+          class="tl__cursor-date"
+          classList={{ "tl__cursor-date--add": editable() }}
+          style={{
+            left: `${Math.min(cursor()!.x + 14, (typeof window !== "undefined" ? window.innerWidth : 1200) - 120)}px`,
+            top: `${cursor()!.y + 18}px`,
+          }}
+        >
+          <Show when={editable()}>
+            <span class="tl__cursor-date-plus">+</span>
+          </Show>
+          {formatByPrecision(cursor()!.iso, precisionForZoom(vp().pxPerMs))}
+        </div>
+      </Show>
 
       {/* hover preview of a moment's rendered markdown */}
       <Show when={hover()}>
@@ -647,6 +806,13 @@ const Timeline: Component<Props> = (props) => {
             <EraEditor
               era={editing() === "new" ? null : (editing() as EraDTO)}
               defaultStart={newEraStart() ?? defaultStart()}
+              defaultStartPrecision={newEraStart() ? precisionForZoom(vp().pxPerMs) : "month"}
+              categorySuggestions={allCategories()}
+              posts={editing() && editing() !== "new" ? postsInEra((editing() as EraDTO).id) : []}
+              focused={editing() !== "new" && focus().has((editing() as EraDTO)?.id)}
+              onAddMoment={() => { const e = editing(); if (e && e !== "new") addMomentTo(e.id); }}
+              onOpenPost={(p) => { setEditing(null); openPost(p); }}
+              onToggleFocus={() => { const e = editing(); if (e && e !== "new") { setEditing(null); toggleFocus(e.id); } }}
               onSaved={onSaved}
               onDeleted={onDeleted}
               onCancel={() => setEditing(null)}
@@ -662,7 +828,9 @@ const Timeline: Component<Props> = (props) => {
               post={editingPost() === "new" ? null : (editingPost() as PostDTO)}
               eras={eras()}
               defaultEraId={newPostEraId()}
-              defaultDate={defaultStart()}
+              defaultDate={newPostDate() ?? defaultStart()}
+              defaultPrecision={newPostPrecision() ?? "day"}
+              categorySuggestions={allCategories()}
               storageEnabled={props.storageEnabled ?? false}
               onSaved={onSavedPost}
               onDeleted={onDeletedPost}
@@ -700,6 +868,46 @@ const Timeline: Component<Props> = (props) => {
                   }}
                   onClose={() => setDetailEra(null)}
                 />
+              </div>
+            </div>
+          );
+        }}
+      </Show>
+
+      {/* read-only moment preview (view mode) */}
+      <Show when={readingPost()}>
+        {(post) => {
+          const p = post();
+          return (
+            <div class="tl__drawer-backdrop" onClick={() => setReadingPost(null)}>
+              <div onClick={(ev) => ev.stopPropagation()}>
+                <aside class="era-editor era-detail">
+                  <h2 style={{ margin: 0 }}>{p.title}</h2>
+                  <p class="muted" style={{ margin: "0.15rem 0 0" }}>
+                    {formatByPrecision(p.eventDate, p.eventPrecision)}
+                  </p>
+                  <Show when={p.categories.length}>
+                    <div class="cat-chips">
+                      <For each={p.categories}>{(c) => <span class="cat-chip cat-chip--static">{c}</span>}</For>
+                    </div>
+                  </Show>
+                  <Show
+                    when={p.bodyHtml}
+                    fallback={<p class="muted" style={{ "margin-top": "1rem" }}>No description yet.</p>}
+                  >
+                    <div class="era-detail__body" innerHTML={p.bodyHtml ?? ""} />
+                  </Show>
+                  <div class="era-editor__actions">
+                    <Show when={!props.readOnly}>
+                      <button class="btn btn--primary" onClick={() => { setReadingPost(null); setEditingPost(p); }}>
+                        Edit
+                      </button>
+                    </Show>
+                    <button class="btn" onClick={() => setReadingPost(null)} style={{ "margin-left": "auto" }}>
+                      Close
+                    </button>
+                  </div>
+                </aside>
               </div>
             </div>
           );

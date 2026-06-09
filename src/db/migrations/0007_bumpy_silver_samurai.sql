@@ -1,0 +1,1 @@
+ALTER TABLE `eras` DROP COLUMN `category`;

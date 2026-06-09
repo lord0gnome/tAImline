@@ -116,7 +116,8 @@ export const eras = sqliteTable(
     endDate: text("end_date"),
     endPrecision: text("end_precision").$type<Precision>(),
     color: text("color"),
-    category: text("category"),
+    /** Tag-like grouping, stored as a JSON string array (e.g. ["Career"]). */
+    categories: text("categories"),
     /** Manual lane preference set by dragging; null = auto-packed. */
     lane: integer("lane"),
     coverMediaId: text("cover_media_id"),
@@ -146,6 +147,8 @@ export const posts = sqliteTable(
     slug: text("slug").notNull(),
     bodyMd: text("body_md"),
     bodyHtml: text("body_html"),
+    /** Tag-like grouping, stored as a JSON string array (e.g. ["Career"]). */
+    categories: text("categories"),
     eventDate: text("event_date").notNull(),
     eventPrecision: text("event_precision")
       .$type<Precision>()

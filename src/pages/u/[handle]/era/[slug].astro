@@ -25,8 +25,12 @@ const isPublic = era.visibility === "public" || era.visibility === "unlisted";
     <p class="muted" style="margin:0;">
       <a href={`/u/${owner.handle}`}>{owner.displayName}</a> ·
       {formatSpan(era.startDate, era.startPrecision, era.endDate, era.endPrecision)}
-      {era.category && <> · {era.category}</>}
     </p>
+    {era.categories.length > 0 && (
+      <div class="cat-chips">
+        {era.categories.map((c) => <span class="cat-chip cat-chip--static">{c}</span>)}
+      </div>
+    )}
     <h1 style="font-size: 2rem; border-left: 4px solid {era.color ?? 'var(--accent)'}; padding-left: 0.6rem;">
       {era.title}
     </h1>

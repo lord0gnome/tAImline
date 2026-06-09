@@ -236,6 +236,28 @@ a:hover {
 .tl__hint {
   font-size: 0.85rem;
 }
+
+/* View/Edit segmented toggle */
+.tl__mode {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.tl__mode-btn {
+  border: 0;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.8rem;
+  cursor: pointer;
+}
+.tl__mode-btn--on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
 .tl__focus {
   display: flex;
   align-items: center;
@@ -256,6 +278,118 @@ a:hover {
 .tl__era--focused {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* ---- category highlight filter bar ---- */
+.tl__cats {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.tl__cats-label {
+  font-size: 0.82rem;
+}
+.tl__cat {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.tl__cat:hover {
+  border-color: var(--accent);
+}
+.tl__cat--on {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 22%, var(--surface));
+  font-weight: 600;
+}
+.tl__cats-clear {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Dim items that don't match the active tag highlight. */
+.tl__era--dim {
+  opacity: 0.28;
+}
+.tl__moment--dim .tl__moment-line {
+  opacity: 0.25;
+}
+
+/* Edit-mode affordances: objects read as clickable-to-edit. */
+.tl--edit .tl__era {
+  cursor: pointer;
+}
+.tl--edit .tl__era:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ---- category chips (read-only display) ---- */
+.cat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface));
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.78rem;
+}
+.cat-chip--static {
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
+}
+.cat-chip__x {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+.cat-chip__x:hover {
+  color: #b3261e;
+}
+
+/* ---- category tag input (editor) ---- */
+.cat-input__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.35rem 0.45rem;
+}
+.cat-input__field {
+  flex: 1;
+  min-width: 8rem;
+  border: 0 !important;
+  background: transparent;
+  padding: 0.1rem !important;
+  font: inherit;
+  outline: none;
 }
 
 .tl__canvas {
@@ -369,6 +503,42 @@ a:hover {
 
 .tl__moment {
   transition: top 0.18s ease;
+}
+
+/* The single floating hover affordance: a chip that follows the cursor and
+   shows the exact day. In edit mode it gains a "+" cue (double-click to add). */
+.tl__cursor-date {
+  position: fixed;
+  z-index: 55;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.12rem 0.45rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text);
+  background: color-mix(in oklab, var(--surface) 88%, var(--text));
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+.tl__cursor-date--add {
+  border-color: var(--accent);
+}
+.tl__cursor-date-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
 }
 
 /* ---- moment hover popup ---- */

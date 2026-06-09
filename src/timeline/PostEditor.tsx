@@ -1,5 +1,6 @@
 import { type Component, createSignal, For, onMount, Show } from "solid-js";
 import type { Precision } from "~/lib/dates.ts";
+import CategoryInput from "./CategoryInput.tsx";
 import DateField from "./DateField.tsx";
 import type { MediaDTO } from "~/lib/media.ts";
 import type { EraDTO, PostDTO } from "./types.ts";
@@ -10,7 +11,11 @@ interface Props {
   eras: EraDTO[];
   defaultEraId: string | null;
   defaultDate: string;
+  /** Precision seed for new moments (e.g. zoom-appropriate when added at a date). */
+  defaultPrecision?: Precision;
   storageEnabled: boolean;
+  /** Existing categories across the timeline, for autocomplete. */
+  categorySuggestions?: string[];
   onSaved: (post: PostDTO) => void;
   onDeleted: (id: string) => void;
   onCancel: () => void;
@@ -24,8 +29,9 @@ const PostEditor: Component<Props> = (props) => {
   const [title, setTitle] = createSignal(p?.title ?? "");
   const [body, setBody] = createSignal(p?.bodyMd ?? "");
   const [eventDate, setEventDate] = createSignal(p?.eventDate ?? props.defaultDate);
-  const [precision, setPrecision] = createSignal<Precision>(p?.eventPrecision ?? "day");
+  const [precision, setPrecision] = createSignal<Precision>(p?.eventPrecision ?? props.defaultPrecision ?? "day");
   const [eraId, setEraId] = createSignal<string>(p?.eraId ?? props.defaultEraId ?? "");
+  const [categories, setCategories] = createSignal<string[]>(p?.categories ?? []);
   const [visibility, setVisibility] = createSignal<string>(p?.visibility ?? "inherit");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -95,6 +101,7 @@ const PostEditor: Component<Props> = (props) => {
       title: title(),
       bodyMd: body(),
       eraId: eraId() || null,
+      categories: categories(),
       eventDate: eventDate(),
       eventPrecision: precision(),
       visibility: visibility(),
@@ -172,6 +179,11 @@ const PostEditor: Component<Props> = (props) => {
             <option value="">— none (free-floating) —</option>
             <For each={props.eras}>{(e) => <option value={e.id}>{e.title}</option>}</For>
           </select>
+        </label>
+
+        <label>
+          Categories
+          <CategoryInput value={categories()} suggestions={props.categorySuggestions} onChange={setCategories} />
         </label>
 
         <label>

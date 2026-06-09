@@ -34,13 +34,13 @@ beforeAll(async () => {
   const mk = (title: string, visibility: "public" | "private" | "gated") =>
     eras.createEra(A, {
       title, descriptionMd: null, startDate: "2010-01-01", startPrecision: "year",
-      endDate: null, endPrecision: null, color: null, category: null, visibility,
+      endDate: null, endPrecision: null, color: null, categories: [], visibility,
     });
   for (const [k, v] of [["pub", "public"], ["priv", "private"], ["gat", "gated"]] as const) {
     const e = mk(`${k} era`, v);
     eraIds[k] = e.id;
     posts.createPost(A, {
-      title: `${k} moment`, bodyMd: null, eraId: e.id, eventDate: "2010-06-01",
+      title: `${k} moment`, bodyMd: null, eraId: e.id, categories: [], eventDate: "2010-06-01",
       eventPrecision: "month", eventEndDate: null, visibility: "inherit",
     });
   }

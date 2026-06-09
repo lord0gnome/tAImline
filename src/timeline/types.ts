@@ -12,7 +12,7 @@ export interface EraDTO {
   endDate: string | null;
   endPrecision: Precision | null;
   color: string | null;
-  category: string | null;
+  categories: string[];
   lane: number | null;
   visibility: EraVisibility;
 }
@@ -25,6 +25,7 @@ export interface PostDTO {
   slug: string;
   bodyMd: string | null;
   bodyHtml: string | null;
+  categories: string[];
   eventDate: string;
   eventPrecision: Precision;
   eventEndDate: string | null;

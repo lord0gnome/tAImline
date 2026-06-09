@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { db } from "~/db/client.ts";
 import { ERA_VISIBILITIES, type EraVisibility, PRECISIONS, type Precision, media, posts } from "~/db/schema.ts";
+import { decodeCategories, parseCategories, serializeCategories } from "~/lib/categories.ts";
 import { isValidISODate } from "~/lib/dates.ts";
 import { getOwnedEra } from "~/lib/eras.ts";
 import { renderPostBody } from "~/lib/postRender.ts";
@@ -26,6 +27,7 @@ export function toPostDTO(row: PostRow): PostDTO {
     slug: row.slug,
     bodyMd: row.bodyMd,
     bodyHtml: row.bodyHtml,
+    categories: decodeCategories(row.categories),
     eventDate: row.eventDate,
     eventPrecision: row.eventPrecision,
     eventEndDate: row.eventEndDate,
@@ -65,6 +67,7 @@ export interface PostInput {
   title?: unknown;
   bodyMd?: unknown;
   eraId?: unknown;
+  categories?: unknown;
   eventDate?: unknown;
   eventPrecision?: unknown;
   eventEndDate?: unknown;
@@ -75,6 +78,7 @@ export interface ParsedPost {
   title: string;
   bodyMd: string | null;
   eraId: string | null;
+  categories: string[];
   eventDate: string;
   eventPrecision: Precision;
   eventEndDate: string | null;
@@ -115,6 +119,7 @@ export function parsePost(
       title,
       bodyMd: asString(input.bodyMd),
       eraId: asString(input.eraId),
+      categories: parseCategories(input.categories),
       eventDate,
       eventPrecision: asPrecision(input.eventPrecision, "day"),
       eventEndDate,
@@ -163,6 +168,7 @@ export function createPost(
     slug: uniqueSlug(userId, value.title),
     bodyMd: value.bodyMd,
     bodyHtml: renderPostBody(value.bodyMd, []), // media (if any) attaches after; re-rendered then
+    categories: serializeCategories(value.categories),
     eventDate: value.eventDate,
     eventPrecision: value.eventPrecision,
     eventEndDate: value.eventEndDate,
@@ -202,6 +208,7 @@ export function updatePost(
       slug,
       bodyMd: value.bodyMd,
       bodyHtml: renderPostBody(value.bodyMd, postMediaRefs(existing.id)),
+      categories: serializeCategories(value.categories),
       eventDate: value.eventDate,
       eventPrecision: value.eventPrecision,
       eventEndDate: value.eventEndDate,

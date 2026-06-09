@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { db } from "~/db/client.ts";
 import { ERA_VISIBILITIES, type EraVisibility, PRECISIONS, type Precision, eras } from "~/db/schema.ts";
+import { decodeCategories, parseCategories, serializeCategories } from "~/lib/categories.ts";
 import { isValidISODate } from "~/lib/dates.ts";
 import { renderMarkdown } from "~/lib/markdown.ts";
 import type { EraDTO } from "~/timeline/types.ts";
@@ -20,7 +21,7 @@ export function toEraDTO(row: EraRow): EraDTO {
     endDate: row.endDate,
     endPrecision: row.endPrecision,
     color: row.color,
-    category: row.category,
+    categories: decodeCategories(row.categories),
     lane: row.lane,
     visibility: row.visibility,
   };
@@ -62,7 +63,7 @@ export interface EraInput {
   endDate?: unknown;
   endPrecision?: unknown;
   color?: unknown;
-  category?: unknown;
+  categories?: unknown;
   visibility?: unknown;
 }
 
@@ -74,7 +75,7 @@ export interface ParsedEra {
   endDate: string | null;
   endPrecision: Precision | null;
   color: string | null;
-  category: string | null;
+  categories: string[];
   visibility: EraVisibility;
 }
 
@@ -116,7 +117,7 @@ export function parseEra(input: EraInput): { ok: true; value: ParsedEra } | { ok
       endDate,
       endPrecision: endDate ? asPrecision(input.endPrecision, "day") : null,
       color: asString(input.color),
-      category: asString(input.category),
+      categories: parseCategories(input.categories),
       visibility,
     },
   };
@@ -155,7 +156,7 @@ export function createEra(userId: string, value: ParsedEra): EraDTO {
     endDate: value.endDate,
     endPrecision: value.endPrecision,
     color: value.color,
-    category: value.category,
+    categories: serializeCategories(value.categories),
     visibility: value.visibility,
   };
   db.insert(eras).values(row).run();
@@ -198,7 +199,7 @@ export function updateEra(existing: EraRow, value: ParsedEra): EraDTO {
       endDate: value.endDate,
       endPrecision: value.endPrecision,
       color: value.color,
-      category: value.category,
+      categories: serializeCategories(value.categories),
       visibility: value.visibility,
       updatedAt: Math.floor(Date.now() / 1000),
     })

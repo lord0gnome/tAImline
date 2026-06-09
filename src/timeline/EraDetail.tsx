@@ -28,8 +28,12 @@ const EraDetail: Component<Props> = (props) => {
               props.era.endDate,
               props.era.endPrecision,
             )}
-            <Show when={props.era.category}> · {props.era.category}</Show>
           </p>
+          <Show when={props.era.categories.length}>
+            <div class="cat-chips">
+              <For each={props.era.categories}>{(c) => <span class="cat-chip cat-chip--static">{c}</span>}</For>
+            </div>
+          </Show>
         </div>
       </div>
 
