@@ -1,5 +1,6 @@
 import {
   type Component,
+  createEffect,
   createMemo,
   createSignal,
   For,
@@ -52,6 +53,8 @@ const Timeline: Component<Props> = (props) => {
   const [availH, setAvailH] = createSignal(480);
   const [hover, setHover] = createSignal<{ post: PostDTO; x: number; y: number } | null>(null);
   const [loaded, setLoaded] = createSignal(false);
+  const [stale, setStale] = createSignal(false);
+  const [freshEraIds, setFreshEraIds] = createSignal<Set<string>>(new Set());
 
   let containerRef: HTMLDivElement | undefined;
   const nowMs = Date.now();
@@ -87,13 +90,28 @@ const Timeline: Component<Props> = (props) => {
   }
 
   async function load() {
+    const prev = new Set(eras().map((e) => e.id));
     const res = await fetch("/api/timeline");
     const data = res.ok ? await res.json() : { eras: [], posts: [] };
     const list: EraDTO[] = data.eras ?? [];
+    // Detect eras that didn't exist before this fetch (SSE or initial load
+    // after first save). Skip the very first load (prev is empty).
+    if (prev.size > 0) {
+      const added = list.filter((e) => !prev.has(e.id)).map((e) => e.id);
+      if (added.length) markFresh(added);
+    }
     setEras(list);
     setPosts(data.posts ?? []);
     if (!loaded()) setViewportNow(frame(list, width()));
     setLoaded(true);
+  }
+
+  /** Mark era IDs as "fresh" so they play the pop animation, then auto-clear. */
+  function markFresh(ids: string[]) {
+    setFreshEraIds((s) => { const n = new Set(s); ids.forEach((id) => n.add(id)); return n; });
+    setTimeout(() => {
+      setFreshEraIds((s) => { const n = new Set(s); ids.forEach((id) => n.delete(id)); return n; });
+    }, 700);
   }
 
   function measure() {
@@ -115,6 +133,32 @@ const Timeline: Component<Props> = (props) => {
       setViewportNow(frame(props.initialEras ?? [], width()));
       setLoaded(true);
     } else {
+      void load();
+
+      // --- SSE live updates ------------------------------------------------
+      // One long-lived EventSource per tab. The server polls a cheap
+      // fingerprint every ~10s and only emits `change` when data actually
+      // moved, so we refetch /api/timeline only when there's something new.
+      const es = new EventSource("/api/timeline/stream");
+      let initial = true; // skip the first event (current version on connect)
+      es.addEventListener("change", () => {
+        if (initial) { initial = false; return; }
+        // Defer refetch while an editor/drawer is open to avoid disrupting
+        // the user mid-edit; the stale flag is flushed by a createEffect.
+        if (editing() || editingPost() || detailEra()) {
+          setStale(true);
+        } else {
+          void load();
+        }
+      });
+      onCleanup(() => es.close());
+    }
+  });
+
+  // Flush any deferred SSE reload once every editor/drawer closes.
+  createEffect(() => {
+    if (stale() && !editing() && !editingPost() && !detailEra()) {
+      setStale(false);
       void load();
     }
   });
@@ -390,6 +434,7 @@ const Timeline: Component<Props> = (props) => {
   const defaultStart = () => msToISO(Math.round(xToDate(width() / 2, vp())));
 
   function onSaved(saved: EraDTO) {
+    const isNew = !eras().some((e) => e.id === saved.id);
     setEras((prev) => {
       const i = prev.findIndex((e) => e.id === saved.id);
       if (i === -1) return [...prev, saved];
@@ -397,6 +442,7 @@ const Timeline: Component<Props> = (props) => {
       copy[i] = saved;
       return copy;
     });
+    if (isNew) markFresh([saved.id]);
     if (detailEra()?.id === saved.id) setDetailEra(saved);
     setEditing(null);
   }
@@ -518,7 +564,7 @@ const Timeline: Component<Props> = (props) => {
                   height: `${LANE_H}px`,
                   "--era-color": e.color ?? "var(--accent)",
                 }}
-                classList={{ "tl__era--focused": focus().has(e.id), "tl__era--dragging": dragging() }}
+                classList={{ "tl__era--focused": focus().has(e.id), "tl__era--dragging": dragging(), "tl__era--fresh": freshEraIds().has(e.id) }}
                 onPointerDown={(ev) => eraPointerDown(ev, e)}
                 onPointerMove={eraPointerMove}
                 onPointerUp={(ev) => eraPointerUp(ev, e)}
