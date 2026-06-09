@@ -68,7 +68,9 @@ cd "$APP_REPO"
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 [[ "$branch" == "master" ]] || die "app repo not on master (on '$branch')"
-[[ -z "$(git status --porcelain)" ]] || die "working tree is dirty — commit/stash feature work first (the release commit must be version-only)"
+# Ignore .claude/ — it's harness-managed (e.g. permission grants) and never part
+# of a release; the release commit below only stages the version files anyway.
+[[ -z "$(git status --porcelain | grep -v '\.claude/' || true)" ]] || die "working tree is dirty — commit/stash feature work first (the release commit must be version-only)"
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && die "tag $TAG already exists"
 
 npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null
