@@ -205,6 +205,7 @@ const Timeline: Component<Props> = (props) => {
   });
 
   function openPost(p: PostDTO) {
+    if (suppressTap) return; // tail end of a pinch — don't open
     if (props.readOnly) {
       if (props.ownerHandle) location.href = `/u/${props.ownerHandle}/post/${p.slug}`;
     } else if (mode() === "view") {
@@ -379,22 +380,82 @@ const Timeline: Component<Props> = (props) => {
   }
 
   // Multi-pointer tracking: 1 pointer pans, 2 pointers pinch-zoom (touch).
+  // `pointers` collects every active pointer over the timeline regardless of
+  // which element it started on, so a second finger can fold a finger resting
+  // on an era/moment into a pinch instead of selecting it.
   const pointers = new Map<number, number>(); // id -> clientX
+  const touchIds = new Set<number>();
   let lastX = 0;
   let pinchDist = 0;
+  let pinchActive = false;
+  let suppressTap = false; // swallow an era/moment tap that's really a pinch
+  // The pointer that first grabbed an era/moment (didn't reach the canvas),
+  // kept so a later second finger can seed the pinch with both positions.
+  let itemPointerId: number | null = null;
+  let itemPointerX = 0;
 
   const dist = () => {
     const xs = [...pointers.values()];
     return Math.abs(xs[0] - xs[1]);
   };
+
+  /** Promote the current gesture to a two-finger pinch (called when a 2nd touch
+   *  appears, from whichever element handled its pointerdown). */
+  function beginPinch(ev: PointerEvent) {
+    if (pinchActive) return;
+    pinchActive = true;
+    suppressTap = true;
+    clearTimeout(eraClickTimer);
+    dragId = null; // abort any in-progress era relane
+    setDragLane(null);
+    pointers.set(ev.pointerId, ev.clientX);
+    if (itemPointerId !== null && !pointers.has(itemPointerId)) {
+      pointers.set(itemPointerId, itemPointerX);
+    }
+    pinchDist = pointers.size >= 2 ? dist() : 0;
+  }
+
+  /** Apply a pinch from any pointer move while a pinch is active. */
+  function pinchMove(ev: PointerEvent) {
+    pointers.set(ev.pointerId, ev.clientX);
+    if (pointers.size < 2 || !containerRef) return;
+    const rect = containerRef.getBoundingClientRect();
+    const xs = [...pointers.values()];
+    const d = Math.abs(xs[0] - xs[1]);
+    if (pinchDist > 0 && d > 0) {
+      const midX = (xs[0] + xs[1]) / 2 - rect.left;
+      setViewportNow(zoomAt(vp(), midX, d / pinchDist)); // pinch is 1:1
+    }
+    pinchDist = d;
+  }
+
+  /** Drop a lifted/cancelled pointer and tidy gesture state. */
+  function releasePointer(ev: PointerEvent) {
+    touchIds.delete(ev.pointerId);
+    pointers.delete(ev.pointerId);
+    pinchDist = 0;
+    const rest = [...pointers.values()];
+    if (rest.length === 1) lastX = rest[0]; // avoid a jump when lifting one finger
+    if (touchIds.size < 2) pinchActive = false; // <2 fingers → pan can resume
+    if (touchIds.size === 0) {
+      itemPointerId = null;
+      // keep tap suppressed briefly so the synthetic click after the last
+      // finger lifts doesn't select an item.
+      if (suppressTap) setTimeout(() => { suppressTap = false; }, 120);
+    }
+  }
+
   function onPointerDown(ev: PointerEvent) {
     cancelAnimationFrame(rafId); // stop any tween when the user grabs the canvas
     rafId = 0;
     target = vp();
+    if (ev.pointerType === "touch") {
+      touchIds.add(ev.pointerId);
+      if (touchIds.size >= 2) { beginPinch(ev); return; }
+    }
     pointers.set(ev.pointerId, ev.clientX);
     (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
     if (pointers.size === 1) lastX = ev.clientX;
-    else if (pointers.size === 2) pinchDist = dist();
   }
   function onPointerMove(ev: PointerEvent) {
     // Track the day under the cursor for the date tooltip (mouse hover, no drag).
@@ -402,30 +463,17 @@ const Timeline: Component<Props> = (props) => {
       const lx = ev.clientX - containerRef.getBoundingClientRect().left;
       setCursor({ x: ev.clientX, y: ev.clientY, iso: msToISO(Math.round(xToDate(lx, vp()))) });
     }
+    if (pinchActive) { pinchMove(ev); return; }
     if (!pointers.has(ev.pointerId)) return;
     pointers.set(ev.pointerId, ev.clientX);
-    const rect = containerRef!.getBoundingClientRect();
-    if (pointers.size >= 2) {
-      const d = dist();
-      if (pinchDist > 0 && d > 0) {
-        const xs = [...pointers.values()];
-        const midX = (xs[0] + xs[1]) / 2 - rect.left;
-        setViewportNow(zoomAt(vp(), midX, d / pinchDist)); // pinch is 1:1
-      }
-      pinchDist = d;
-    } else {
-      const dx = ev.clientX - lastX;
-      lastX = ev.clientX;
-      const v = vp();
-      setViewportNow({ ...v, originMs: v.originMs - dx / v.pxPerMs }); // drag is 1:1
-    }
+    const dx = ev.clientX - lastX;
+    lastX = ev.clientX;
+    const v = vp();
+    setViewportNow({ ...v, originMs: v.originMs - dx / v.pxPerMs }); // drag is 1:1
   }
   function onPointerUp(ev: PointerEvent) {
-    pointers.delete(ev.pointerId);
     (ev.currentTarget as HTMLElement).releasePointerCapture?.(ev.pointerId);
-    pinchDist = 0;
-    const rest = [...pointers.values()];
-    if (rest.length === 1) lastX = rest[0]; // avoid a jump when lifting one finger
+    releasePointer(ev);
   }
 
   // Keyboard: arrows pan, +/- zoom (anchored at center), Home fits.
@@ -464,8 +512,14 @@ const Timeline: Component<Props> = (props) => {
   let suppressClickId: string | null = null;
 
   function eraPointerDown(ev: PointerEvent, e: EraDTO) {
-    ev.stopPropagation(); // don't pan the canvas
     clearTimeout(eraClickTimer); // cancel any pending single-click edit
+    if (ev.pointerType === "touch") {
+      touchIds.add(ev.pointerId);
+      if (touchIds.size >= 2) { beginPinch(ev); return; } // 2nd finger → pinch, not select
+    }
+    ev.stopPropagation(); // single pointer on an era: don't pan the canvas
+    itemPointerId = ev.pointerId; // let a later 2nd finger fold this into a pinch
+    itemPointerX = ev.clientX;
     if (!editable()) return;
     canvasTop = containerRef!.getBoundingClientRect().top;
     dragId = e.id;
@@ -474,26 +528,27 @@ const Timeline: Component<Props> = (props) => {
     (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
   }
   function eraPointerMove(ev: PointerEvent) {
+    if (pinchActive) { pinchMove(ev); return; } // a 2nd finger turned this into a pinch
     if (dragId === null) return;
     if (!dragMoved && Math.abs(ev.clientY - dragStartY) < 5) return;
     dragMoved = true;
     setDragLane({ id: dragId, y: ev.clientY - canvasTop });
   }
   function eraPointerUp(ev: PointerEvent, e: EraDTO) {
-    if (dragId === null) return;
-    const moved = dragMoved;
-    const y = ev.clientY - canvasTop;
     (ev.currentTarget as HTMLElement).releasePointerCapture?.(ev.pointerId);
-    dragId = null;
-    setDragLane(null);
-    if (moved) {
-      suppressClickId = e.id; // the click that follows shouldn't open the drawer
+    if (dragId !== null && dragMoved && !pinchActive) {
+      const y = ev.clientY - canvasTop;
+      suppressClickId = e.id; // the click that follows shouldn't open the editor
       const target = Math.round((y - RULER_H - LANE_GAP) / (LANE_H + LANE_GAP));
       const clamped = Math.max(0, Math.min(target, lanes().laneCount));
       if (clamped !== lanes().lanes[e.id]) void persistLane(e, clamped);
     }
+    dragId = null;
+    setDragLane(null);
+    releasePointer(ev);
   }
   function eraClick(e: EraDTO) {
+    if (suppressTap) return; // tail end of a pinch — don't select
     if (suppressClickId === e.id) {
       suppressClickId = null;
       return;
@@ -506,6 +561,18 @@ const Timeline: Component<Props> = (props) => {
     }
     clearTimeout(eraClickTimer);
     eraClickTimer = setTimeout(() => setEditing(e), 240);
+  }
+
+  // A touch on a moment: track it so a 2nd finger pinches (instead of selecting
+  // the moment), and otherwise keep it from panning the canvas.
+  function momentPointerDown(ev: PointerEvent) {
+    if (ev.pointerType === "touch") {
+      touchIds.add(ev.pointerId);
+      if (touchIds.size >= 2) { beginPinch(ev); return; }
+    }
+    ev.stopPropagation();
+    itemPointerId = ev.pointerId;
+    itemPointerX = ev.clientX;
   }
 
   // Double-click an era → new moment attached to it, dated where you clicked.
@@ -666,6 +733,7 @@ const Timeline: Component<Props> = (props) => {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         onPointerLeave={(ev) => { onPointerUp(ev); setCursor(null); }}
         onKeyDown={onKeyDown}
         onDblClick={onCanvasDblClick}
@@ -707,6 +775,7 @@ const Timeline: Component<Props> = (props) => {
                 onPointerDown={(ev) => eraPointerDown(ev, e)}
                 onPointerMove={eraPointerMove}
                 onPointerUp={(ev) => eraPointerUp(ev, e)}
+                onPointerCancel={(ev) => eraPointerUp(ev, e)}
                 onClick={() => eraClick(e)}
                 onDblClick={(ev) => eraDblClick(ev, e)}
                 aria-label={`Era: ${e.title}, ${formatSpan(e.startDate, e.startPrecision, e.endDate, e.endPrecision)}`}
@@ -738,7 +807,7 @@ const Timeline: Component<Props> = (props) => {
                   top: `${top()}px`,
                   height: `${h()}px`,
                 }}
-                onPointerDown={(ev) => ev.stopPropagation()}
+                onPointerDown={momentPointerDown}
                 onDblClick={(ev) => ev.stopPropagation()}
                 onClick={() => openPost(p)}
                 onMouseEnter={(ev) => setHover({ post: p, x: ev.clientX, y: ev.clientY })}
