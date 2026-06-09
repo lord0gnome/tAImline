@@ -5,7 +5,11 @@
       "Bash(npm install *)",
       "Bash(npm run *)",
       "Bash(node -e \"const D=require\\('better-sqlite3'\\); const d=new D\\('./data/taimline.db'\\); console.log\\(d.prepare\\(\\\\\"select name from sqlite_master where type='table' order by name\\\\\"\\).all\\(\\).map\\(r=>r.name\\).join\\(', '\\)\\)\")",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(npx astro *)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git commit *)"
     ]
   }
 }
