@@ -175,6 +175,13 @@ export function getEraBySlug(userId: string, slug: string): EraRow | null {
   );
 }
 
+/** Case-insensitive title lookup. Returns the first match (titles aren't unique). */
+export function getEraByTitle(userId: string, title: string): EraRow | null {
+  const all = db.select().from(eras).where(eq(eras.userId, userId)).all();
+  const lower = title.toLowerCase();
+  return all.find((r) => r.title.toLowerCase() === lower) ?? null;
+}
+
 export function updateEra(existing: EraRow, value: ParsedEra): EraDTO {
   const slug =
     value.title === existing.title

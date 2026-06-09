@@ -2,6 +2,8 @@ import type { users } from "~/db/schema.ts";
 import {
   createEra,
   deleteEra,
+  getEraBySlug,
+  getEraByTitle,
   getOwnedEra,
   listErasForUser,
   parseEra,
@@ -23,7 +25,7 @@ import { createShare, listShares, revokeShare } from "~/lib/shares.ts";
 
 type UserRow = typeof users.$inferSelect;
 
-export const MCP_SERVER_INFO = { name: "taimline", version: "0.15.0" };
+export const MCP_SERVER_INFO = { name: "taimline", version: "0.16.0" };
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpTool {
@@ -58,7 +60,18 @@ const postProps = {
   bodyMd: { type: "string", description: "Markdown story / body." },
   eraId: {
     type: ["string", "null"],
-    description: "Id of the era this belongs to, or null/omitted if free-floating.",
+    description:
+      "UUID of the era this moment belongs to. Prefer eraSlug or eraTitle for convenience; if multiple are given, eraId takes priority. Null/omitted = free-floating.",
+  },
+  eraSlug: {
+    type: ["string", "null"],
+    description:
+      "Slug of the era (e.g. 'university'). Resolved server-side to eraId. Use list_timeline to discover slugs.",
+  },
+  eraTitle: {
+    type: ["string", "null"],
+    description:
+      "Exact title of the era (case-insensitive, e.g. 'University'). Resolved server-side to eraId.",
   },
   eventDate: { type: "string", description: "Date of the moment as YYYY-MM-DD." },
   eventPrecision: { ...precision, description: "How precise the date is." },
@@ -171,7 +184,10 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "create_post",
     description:
-      "Add a dated moment (markdown story) to the timeline, optionally attached to an era by id. Reference attached media in the body as ![caption](name).",
+      "Add a dated moment (markdown story) to the timeline, optionally attached to an era. " +
+      "To attach, pass ONE of: eraId (UUID), eraSlug (e.g. 'university'), or eraTitle (e.g. 'University') — " +
+      "the server resolves slug/title to the id automatically. Omit all three for a free-floating moment. " +
+      "Reference attached media in the body as ![caption](name).",
     inputSchema: {
       type: "object",
       properties: postProps,
@@ -182,7 +198,8 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "create_posts",
     description:
-      "Create MANY moments in one call. Pass an array; each is created independently and per-item errors are reported.",
+      "Create MANY moments in one call. Each item may attach to an era via eraId, eraSlug, or eraTitle " +
+      "(same resolution rules as create_post). Items are created independently; per-item errors are reported.",
     inputSchema: {
       type: "object",
       properties: {
@@ -295,6 +312,35 @@ const err = (message: string): ToolResult => ({ text: message, isError: true });
 
 type Args = Record<string, unknown>;
 
+/**
+ * Resolve the era reference in a post's args. Accepts eraId (UUID), eraSlug,
+ * or eraTitle — in that priority order. Mutates `args.eraId` in-place so
+ * downstream `parsePost` always sees a UUID (or null).
+ * Returns an error string if the lookup fails, null on success.
+ */
+function resolvePostEra(userId: string, args: Args): string | null {
+  // eraId takes priority — if it's a non-empty string, trust it directly.
+  if (typeof args.eraId === "string" && args.eraId.trim()) return null;
+
+  const slug = typeof args.eraSlug === "string" ? args.eraSlug.trim() : "";
+  if (slug) {
+    const row = getEraBySlug(userId, slug);
+    if (!row) return `No era found with slug "${slug}".`;
+    args.eraId = row.id;
+    return null;
+  }
+
+  const title = typeof args.eraTitle === "string" ? args.eraTitle.trim() : "";
+  if (title) {
+    const row = getEraByTitle(userId, title);
+    if (!row) return `No era found with title "${title}".`;
+    args.eraId = row.id;
+    return null;
+  }
+
+  return null; // no era reference at all — free-floating
+}
+
 /** Execute a tool on behalf of `user`. Never throws; returns isError instead. */
 export async function callTool(user: UserRow, name: string, args: Args): Promise<ToolResult> {
   switch (name) {
@@ -357,6 +403,8 @@ export async function callTool(user: UserRow, name: string, args: Args): Promise
     }
 
     case "create_post": {
+      const eraErr = resolvePostEra(user.id, args);
+      if (eraErr) return err(eraErr);
       const parsed = parsePost(args);
       if (!parsed.ok) return err(parsed.error);
       const r = createPost(user.id, parsed.value);
@@ -369,6 +417,8 @@ export async function callTool(user: UserRow, name: string, args: Args): Promise
       const created: unknown[] = [];
       const errors: { index: number; error: string }[] = [];
       list.forEach((item, index) => {
+        const eraErr = resolvePostEra(user.id, item);
+        if (eraErr) { errors.push({ index, error: eraErr }); return; }
         const parsed = parsePost(item);
         if (!parsed.ok) {
           errors.push({ index, error: parsed.error });
@@ -385,6 +435,8 @@ export async function callTool(user: UserRow, name: string, args: Args): Promise
       const id = typeof args.id === "string" ? args.id : "";
       const existing = getOwnedPost(user.id, id);
       if (!existing) return err(`Post not found: ${id}`);
+      const eraErr = resolvePostEra(user.id, args);
+      if (eraErr) return err(eraErr);
       const parsed = parsePost(args);
       if (!parsed.ok) return err(parsed.error);
       const r = updatePost(existing, parsed.value);
