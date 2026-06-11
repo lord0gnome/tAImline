@@ -25,6 +25,8 @@ const OidcSettings: Component<Props> = (props) => {
   const [loaded, setLoaded] = createSignal(false);
   const [status, setStatus] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [testResult, setTestResult] = createSignal<string | null>(null);
+  const [testing, setTesting] = createSignal(false);
 
   function apply(c: PublicOidcConfig) {
     setEnabled(c.enabled);
@@ -41,6 +43,20 @@ const OidcSettings: Component<Props> = (props) => {
     if (res.ok) apply((await res.json()).config);
     setLoaded(true);
   });
+
+  async function test() {
+    setTesting(true);
+    setTestResult(null);
+    const res = await fetch("/api/admin/oidc", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ issuer: issuer() }), // test the URL in the form, unsaved
+    });
+    setTesting(false);
+    const r = (await res.json().catch(() => ({}))).result;
+    if (r?.ok) setTestResult(`✓ Reached the IdP. issuer: ${r.issuer}`);
+    else setTestResult(`✗ ${r?.error ?? "Discovery failed."}`);
+  }
 
   async function save(ev: Event) {
     ev.preventDefault();
@@ -125,10 +141,18 @@ const OidcSettings: Component<Props> = (props) => {
         <button class="btn btn--primary" type="submit" disabled={busy() || !loaded()}>
           Save OIDC settings
         </button>
+        <button class="btn" type="button" onClick={test} disabled={testing() || !issuer()}>
+          {testing() ? "Testing…" : "Test discovery"}
+        </button>
         <Show when={status()}>
           <span class="muted" style={{ "align-self": "center" }}>{status()}</span>
         </Show>
       </div>
+      <Show when={testResult()}>
+        <p class="muted" style={{ "font-size": "0.82rem", margin: "0.25rem 0 0", "word-break": "break-all" }}>
+          {testResult()}
+        </p>
+      </Show>
     </form>
   );
 };

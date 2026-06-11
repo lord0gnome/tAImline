@@ -53,6 +53,28 @@ export async function discover(issuer: string): Promise<Discovery> {
   return doc;
 }
 
+/** Admin diagnostics: try discovery and report the concrete outcome/reason. */
+export async function testDiscovery(
+  issuer: string,
+): Promise<{ ok: true; issuer: string; authorizationEndpoint: string; tokenEndpoint: string } | { ok: false; error: string }> {
+  if (!issuer) return { ok: false, error: "No issuer URL set." };
+  try {
+    const doc = await discover(issuer);
+    return {
+      ok: true,
+      issuer: doc.issuer,
+      authorizationEndpoint: doc.authorization_endpoint,
+      tokenEndpoint: doc.token_endpoint,
+    };
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    // Node fetch wraps the underlying network cause (DNS, TLS, refused, …).
+    const cause = (err as { cause?: { code?: string; message?: string } }).cause;
+    const detail = cause?.code ?? cause?.message;
+    return { ok: false, error: detail ? `${err.message} (${detail})` : err.message };
+  }
+}
+
 export function buildAuthUrl(
   doc: Discovery,
   opts: { clientId: string; scopes: string; state: string; verifier: string; redirectUri: string },

@@ -42,7 +42,10 @@ export const GET: APIRoute = async ({ cookies, redirect, request, clientAddress 
       verifier,
       redirectUri: oidcRedirectUri(),
     });
-  } catch {
+  } catch (e) {
+    // Surface the real reason in the server log; admins can also use the
+    // "Test discovery" button in settings to see it directly.
+    console.error("[oidc] discovery/auth-url failed:", e instanceof Error ? e.message : e);
     return new Response("OIDC discovery failed — check the issuer URL.", { status: 502 });
   }
 

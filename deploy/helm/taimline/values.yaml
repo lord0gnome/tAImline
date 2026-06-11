@@ -12,6 +12,13 @@ image:
 imagePullSecrets: []
 # - name: ghcr-pull
 
+# Extra /etc/hosts entries for the pod. Needed when the app must reach a service
+# by a hostname that only resolves on the LAN (split-horizon DNS) — e.g. an
+# in-cluster OIDC provider published on a public ingress VIP.
+hostAliases: []
+# - ip: "192.168.0.99"
+#   hostnames: ["login.morill.es"]
+
 # SQLite is embedded → the pod owns the DB file → keep a single replica.
 # Horizontal scale-out is the libSQL/Postgres path (then this becomes >1).
 replicaCount: 1
