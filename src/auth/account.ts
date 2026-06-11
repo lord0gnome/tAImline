@@ -13,6 +13,10 @@ interface OAuthIdentity {
   provider: string;
   providerUserId: string;
   email?: string | null;
+  /** Whether the IdP reports the email as verified. Linking by email is only
+   *  done when this isn't explicitly false (prevents account takeover via an
+   *  unverified address). */
+  emailVerified?: boolean;
   name?: string | null;
   picture?: string | null;
   /** Seed for the auto-generated handle (e.g. preferred_username). */
@@ -42,9 +46,15 @@ function generateUniqueHandle(base: string): string {
 }
 
 /**
- * Find the user linked to this provider account, or create one on first login.
- * Account linking by email across providers is deferred (M5+); we key strictly
- * on (provider, providerUserId).
+ * Resolve the user for an OAuth/OIDC identity, or create one on first login.
+ * Resolution order:
+ *   1. existing (provider, providerUserId) link — a returning account;
+ *   2. else link to an existing user with the SAME verified email — so the same
+ *      person signing in through a different provider (e.g. Google then
+ *      Authentik) lands on one account instead of a duplicate;
+ *   3. else create a fresh user.
+ * Email linking is skipped when the IdP marks the email unverified, to avoid
+ * takeover via an attacker-controlled address.
  */
 function upsertOAuthUser(identity: OAuthIdentity): UserRow {
   const { provider, providerUserId } = identity;
@@ -66,6 +76,20 @@ function upsertOAuthUser(identity: OAuthIdentity): UserRow {
       }
       claimInvites(existing);
       return existing;
+    }
+  }
+
+  // No link yet for this (provider, sub): attach to an existing user that owns
+  // this verified email, rather than creating a duplicate account.
+  if (email && identity.emailVerified !== false) {
+    const byEmail = db.select().from(users).where(eq(users.email, email)).get();
+    if (byEmail) {
+      db.insert(oauthAccounts).values({ provider, providerUserId, userId: byEmail.id }).run();
+      if (!byEmail.avatarUrl && identity.picture) {
+        db.update(users).set({ avatarUrl: identity.picture }).where(eq(users.id, byEmail.id)).run();
+      }
+      claimInvites(byEmail);
+      return db.select().from(users).where(eq(users.id, byEmail.id)).get()!;
     }
   }
 
@@ -92,6 +116,7 @@ export function upsertGoogleUser(claims: GoogleClaims): UserRow {
     provider: "google",
     providerUserId: claims.sub,
     email: claims.email,
+    emailVerified: claims.emailVerified,
     name: claims.name,
     picture: claims.picture,
   });
@@ -102,6 +127,7 @@ export function upsertOidcUser(claims: OidcClaims): UserRow {
     provider: "oidc",
     providerUserId: claims.sub,
     email: claims.email,
+    emailVerified: claims.emailVerified,
     name: claims.name,
     picture: claims.picture,
     handleSeed: claims.preferredUsername,

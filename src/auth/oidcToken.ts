@@ -20,6 +20,7 @@ interface Introspection {
   active: boolean;
   sub?: string;
   email?: string;
+  emailVerified?: boolean;
   name?: string;
   preferredUsername?: string;
   iss?: string;
@@ -32,6 +33,7 @@ export function parseIntrospection(raw: Record<string, unknown>): Introspection 
     active: raw.active === true,
     sub: typeof raw.sub === "string" ? raw.sub : undefined,
     email: typeof raw.email === "string" ? raw.email : undefined,
+    emailVerified: typeof raw.email_verified === "boolean" ? raw.email_verified : undefined,
     name: typeof raw.name === "string" ? raw.name : undefined,
     preferredUsername: typeof raw.preferred_username === "string" ? raw.preferred_username : undefined,
     iss: typeof raw.iss === "string" ? raw.iss : undefined,
@@ -93,6 +95,7 @@ export async function validateOidcAccessToken(token: string): Promise<UserRow | 
   const user = upsertOidcUser({
     sub: info.sub,
     email: info.email,
+    emailVerified: info.emailVerified,
     name: info.name,
     preferredUsername: info.preferredUsername,
   });
