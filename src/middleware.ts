@@ -6,10 +6,12 @@ import {
   validateSessionToken,
 } from "~/auth/session.ts";
 import { validateApiToken } from "~/auth/tokens.ts";
+import { isAdmin } from "~/lib/admin.ts";
 
 export const onRequest = defineMiddleware(async (context, next) => {
   context.locals.user = null;
   context.locals.sessionId = null;
+  context.locals.isAdmin = false;
 
   const token = context.cookies.get(SESSION_COOKIE)?.value ?? null;
   if (token) {
@@ -33,6 +35,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
       if (user) context.locals.user = user;
     }
   }
+
+  context.locals.isAdmin = isAdmin(context.locals.user);
 
   return next();
 });

@@ -9,7 +9,10 @@
       "Bash(npx astro *)",
       "Bash(git add *)",
       "Bash(git commit -q -m ' *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(./scripts/publish.sh 0.16.1)",
+      "Bash(bash -n scripts/publish.sh)",
+      "Bash(kubectl get *)"
     ]
   }
 }

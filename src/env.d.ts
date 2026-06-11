@@ -11,6 +11,8 @@ declare global {
       user: UserRow | null;
       /** Active session id (hashed), or null. */
       sessionId: string | null;
+      /** Whether the authenticated user is an admin (email ∈ ADMIN_EMAILS). */
+      isAdmin: boolean;
     }
   }
 }

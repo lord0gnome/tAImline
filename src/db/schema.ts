@@ -200,6 +200,25 @@ export const media = sqliteTable(
   ],
 );
 
+/**
+ * Single-row (id = "default") admin-configurable OIDC identity provider, so the
+ * timeline can authenticate against any IdP (e.g. self-hosted Authentik) via
+ * discovery without baking creds into env. The client secret lives here but is
+ * never returned to the browser. Admin = email ∈ ADMIN_EMAILS (env), not a column.
+ */
+export const oidcConfig = sqliteTable("oidc_config", {
+  id: text("id").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+  /** Sign-in button label, e.g. "Authentik". */
+  label: text("label").notNull().default("OIDC"),
+  /** Issuer base URL; discovery doc lives at <issuer>/.well-known/openid-configuration. */
+  issuer: text("issuer"),
+  clientId: text("client_id"),
+  clientSecret: text("client_secret"),
+  scopes: text("scopes").notNull().default("openid profile email"),
+  updatedAt: integer("updated_at").notNull().default(now),
+});
+
 export const shares = sqliteTable(
   "shares",
   {

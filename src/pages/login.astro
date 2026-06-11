@@ -1,11 +1,13 @@
 ---
 import Base from "~/layouts/Base.astro";
 import { devLoginEnabled } from "~/auth/dev.ts";
+import { getPublicOidcConfig, oidcEnabled } from "~/lib/oidcConfig.ts";
 
 // Already signed in? Go straight to the app.
 if (Astro.locals.user) return Astro.redirect("/app");
 
 const devLogin = devLoginEnabled();
+const oidc = oidcEnabled() ? getPublicOidcConfig() : null;
 ---
 
 <Base title="Sign in — tAImline">
@@ -16,7 +18,18 @@ const devLogin = devLoginEnabled();
       <a class="btn btn--primary" style="width: 100%; justify-content: center;" href="/auth/google">
         Continue with Google
       </a>
-      <p class="muted" style="font-size: 0.85rem; margin-bottom: 0;">
+      {
+        oidc && (
+          <a
+            class="btn"
+            style="width: 100%; justify-content: center; margin-top: 0.75rem;"
+            href="/auth/oidc"
+          >
+            Continue with {oidc.label}
+          </a>
+        )
+      }
+      <p class="muted" style="font-size: 0.85rem; margin-bottom: 0; margin-top: 0.75rem;">
         GitHub sign-in is coming next.
       </p>
       {

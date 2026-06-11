@@ -3,11 +3,14 @@ import Base from "~/layouts/Base.astro";
 import TokenManager from "~/settings/TokenManager.tsx";
 import ProfileSettings from "~/settings/ProfileSettings.tsx";
 import ShareManager from "~/settings/ShareManager.tsx";
+import OidcSettings from "~/settings/OidcSettings.tsx";
 
 const user = Astro.locals.user;
 if (!user) return Astro.redirect("/login");
 
+const isAdmin = Astro.locals.isAdmin;
 const baseUrl = import.meta.env.PUBLIC_BASE_URL ?? "http://localhost:4321";
+const oidcRedirectUri = `${baseUrl}/auth/oidc/callback`;
 ---
 
 <Base title="Settings — tAImline">
@@ -42,6 +45,20 @@ const baseUrl = import.meta.env.PUBLIC_BASE_URL ?? "http://localhost:4321";
     </p>
 
     <TokenManager client:only="solid-js" />
+
+    {
+      isAdmin && (
+        <>
+          <h2 style="margin-top: 2rem;">OIDC sign-in (admin)</h2>
+          <p class="muted">
+            Configure a generic OpenID Connect provider (e.g. your Authentik) so people
+            can sign in with it alongside Google. The client secret is write-only — it's
+            stored server-side and never shown again.
+          </p>
+          <OidcSettings client:only="solid-js" redirectUri={oidcRedirectUri} />
+        </>
+      )
+    }
 
     <h2 style="margin-top: 2rem;">Connect an MCP client</h2>
     <p class="muted">

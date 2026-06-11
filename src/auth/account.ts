@@ -4,8 +4,20 @@ import { db } from "~/db/client.ts";
 import { oauthAccounts, users } from "~/db/schema.ts";
 import { claimInvites } from "~/lib/shares.ts";
 import type { GoogleClaims } from "./google.ts";
+import type { OidcClaims } from "./oidc.ts";
 
 type UserRow = typeof users.$inferSelect;
+
+/** Normalized identity used to link/create a user across OAuth/OIDC providers. */
+interface OAuthIdentity {
+  provider: string;
+  providerUserId: string;
+  email?: string | null;
+  name?: string | null;
+  picture?: string | null;
+  /** Seed for the auto-generated handle (e.g. preferred_username). */
+  handleSeed?: string | null;
+}
 
 function slugify(input: string): string {
   const slug = input
@@ -30,23 +42,19 @@ function generateUniqueHandle(base: string): string {
 }
 
 /**
- * Find the user linked to this Google account, or create one on first login.
+ * Find the user linked to this provider account, or create one on first login.
  * Account linking by email across providers is deferred (M5+); we key strictly
  * on (provider, providerUserId).
  */
-export function upsertGoogleUser(claims: GoogleClaims): UserRow {
+function upsertOAuthUser(identity: OAuthIdentity): UserRow {
+  const { provider, providerUserId } = identity;
+  const email = identity.email?.toLowerCase() ?? null;
+
   const link = db
     .select()
     .from(oauthAccounts)
-    .where(
-      and(
-        eq(oauthAccounts.provider, "google"),
-        eq(oauthAccounts.providerUserId, claims.sub),
-      ),
-    )
+    .where(and(eq(oauthAccounts.provider, provider), eq(oauthAccounts.providerUserId, providerUserId)))
     .get();
-
-  const email = claims.email?.toLowerCase() ?? null;
 
   if (link) {
     const existing = db.select().from(users).where(eq(users.id, link.userId)).get();
@@ -62,21 +70,40 @@ export function upsertGoogleUser(claims: GoogleClaims): UserRow {
   }
 
   const id = randomUUID();
-  const handleBase = claims.email?.split("@")[0] ?? claims.name ?? "user";
+  const handleBase = identity.handleSeed ?? email?.split("@")[0] ?? identity.name ?? "user";
   const user: typeof users.$inferInsert = {
     id,
     handle: generateUniqueHandle(handleBase),
-    displayName: claims.name ?? claims.email?.split("@")[0] ?? "New user",
+    displayName: identity.name ?? email?.split("@")[0] ?? "New user",
     email,
-    avatarUrl: claims.picture ?? null,
+    avatarUrl: identity.picture ?? null,
   };
 
   db.insert(users).values(user).run();
-  db.insert(oauthAccounts)
-    .values({ provider: "google", providerUserId: claims.sub, userId: id })
-    .run();
+  db.insert(oauthAccounts).values({ provider, providerUserId, userId: id }).run();
 
   const created = db.select().from(users).where(eq(users.id, id)).get()!;
   claimInvites(created);
   return created;
+}
+
+export function upsertGoogleUser(claims: GoogleClaims): UserRow {
+  return upsertOAuthUser({
+    provider: "google",
+    providerUserId: claims.sub,
+    email: claims.email,
+    name: claims.name,
+    picture: claims.picture,
+  });
+}
+
+export function upsertOidcUser(claims: OidcClaims): UserRow {
+  return upsertOAuthUser({
+    provider: "oidc",
+    providerUserId: claims.sub,
+    email: claims.email,
+    name: claims.name,
+    picture: claims.picture,
+    handleSeed: claims.preferredUsername,
+  });
 }
