@@ -5,6 +5,7 @@ import {
   setSessionCookie,
   validateSessionToken,
 } from "~/auth/session.ts";
+import { validateOidcAccessToken } from "~/auth/oidcToken.ts";
 import { validateApiToken } from "~/auth/tokens.ts";
 import { isAdmin } from "~/lib/admin.ts";
 
@@ -26,12 +27,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
   }
 
-  // Fall back to an API token (Authorization: Bearer …) for programmatic
-  // clients (the MCP server, scripts). Tokens never get a session cookie.
+  // Fall back to a bearer token (Authorization: Bearer …) for programmatic
+  // clients. Two kinds: a taimline API token (tai_…, scripts / a single user's
+  // MCP), or an OIDC access token from the configured provider — the latter
+  // lets each Open WebUI user drive the MCP as themselves via OAuth. Bearer
+  // clients never get a session cookie.
   if (!context.locals.user) {
     const auth = context.request.headers.get("authorization");
     if (auth?.startsWith("Bearer ")) {
-      const user = validateApiToken(auth.slice(7).trim());
+      const raw = auth.slice(7).trim();
+      const user = validateApiToken(raw) ?? (await validateOidcAccessToken(raw));
       if (user) context.locals.user = user;
     }
   }

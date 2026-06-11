@@ -10,10 +10,11 @@ export interface OidcClaims {
   picture?: string;
 }
 
-interface Discovery {
+export interface Discovery {
   authorization_endpoint: string;
   token_endpoint: string;
   userinfo_endpoint?: string;
+  introspection_endpoint?: string;
   issuer: string;
 }
 
