@@ -9,7 +9,11 @@ export const MS_DAY = 86_400_000;
 /** Parse a stored ISO date ("YYYY-MM-DD", "YYYY-MM", or "YYYY") to UTC ms. */
 export function toMs(iso: string): number {
   const [y, m = "1", d = "1"] = iso.split("-");
-  return Date.UTC(Number(y), Number(m) - 1, Number(d));
+  // Date.UTC maps years 0–99 to 1900–1999, which would place e.g. year 1 CE at
+  // 1901. setUTCFullYear takes the literal year, so ancient dates stay correct.
+  const dt = new Date(0);
+  dt.setUTCFullYear(Number(y), Number(m) - 1, Number(d));
+  return dt.getTime();
 }
 
 /** UTC ms → "YYYY-MM-DD". */
