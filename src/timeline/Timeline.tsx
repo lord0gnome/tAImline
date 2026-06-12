@@ -114,13 +114,21 @@ const Timeline: Component<Props> = (props) => {
     return list.filter((e) => f.has(e.id) || focused.some((g) => overlaps(e, g)));
   }
 
-  // Initial framing: span all eras (or birth→now, or last ~30y) with padding.
-  function frame(list: EraDTO[], w: number): Viewport {
+  // Initial framing: span all eras AND posts (so future-dated / free-floating
+  // moments are in view), always including "today" plus a little future
+  // headroom. Falls back to birth→now, or the last ~30y.
+  function frame(list: EraDTO[], postList: PostDTO[], w: number): Viewport {
+    const stamps: number[] = [];
+    for (const e of list) stamps.push(toMs(e.startDate), endMsOf(e));
+    for (const p of postList) {
+      stamps.push(toMs(p.eventDate));
+      if (p.eventEndDate) stamps.push(toMs(p.eventEndDate));
+    }
     let from: number;
     let to: number;
-    if (list.length > 0) {
-      from = Math.min(...list.map((e) => toMs(e.startDate)));
-      to = Math.max(...list.map(endMsOf));
+    if (stamps.length > 0) {
+      from = Math.min(...stamps);
+      to = Math.max(...stamps);
     } else if (props.birthDate) {
       from = toMs(props.birthDate);
       to = nowMs;
@@ -128,6 +136,10 @@ const Timeline: Component<Props> = (props) => {
       to = nowMs;
       from = nowMs - 30 * 365 * MS_DAY;
     }
+    // Keep "now" on screen so the today marker and any upcoming events read in
+    // context; add a touch of future headroom when there's nothing ahead yet.
+    if (to <= nowMs) to = nowMs + (to - from) * 0.04;
+    else to = Math.max(to, nowMs);
     const fitted = fitRange(from, to, w, 0.06);
     return { ...fitted, pxPerMs: clampZoom(fitted.pxPerMs) };
   }
@@ -145,7 +157,7 @@ const Timeline: Component<Props> = (props) => {
     }
     setEras(list);
     setPosts(data.posts ?? []);
-    if (!loaded()) setViewportNow(frame(list, width()));
+    if (!loaded()) setViewportNow(frame(list, data.posts ?? [], width()));
     setLoaded(true);
   }
 
@@ -187,7 +199,7 @@ const Timeline: Component<Props> = (props) => {
       // Public view: data is provided; no API fetch.
       setEras(props.initialEras ?? []);
       setPosts(props.initialPosts ?? []);
-      setViewportNow(frame(props.initialEras ?? [], width()));
+      setViewportNow(frame(props.initialEras ?? [], props.initialPosts ?? [], width()));
       setLoaded(true);
     } else {
       void load();
@@ -333,10 +345,15 @@ const Timeline: Component<Props> = (props) => {
   }
 
   // ---- focus controls ---------------------------------------------------
+  const postsForEras = (eraList: EraDTO[]) => {
+    const ids = new Set(eraList.map((e) => e.id));
+    return posts().filter((p) => p.eraId && ids.has(p.eraId));
+  };
   function applyFocus(f: Set<string>) {
     setFocus(f);
     const shown = computeShown(eras(), f);
-    tweenTo(frame(shown.length ? shown : eras(), width()));
+    const fp = f.size === 0 ? posts() : postsForEras(shown);
+    tweenTo(frame(shown.length ? shown : eras(), fp, width()));
   }
   function toggleFocus(id: string) {
     const f = new Set(focus());
@@ -520,7 +537,7 @@ const Timeline: Component<Props> = (props) => {
         tweenTo(zoomAt(target, w / 2, 1 / 1.4));
         break;
       case "Home":
-        tweenTo(frame(shownEras(), w));
+        tweenTo(frame(shownEras(), shownPosts(), w));
         break;
       default:
         return;
@@ -696,7 +713,7 @@ const Timeline: Component<Props> = (props) => {
             + New moment
           </button>
         </Show>
-        <button class="btn" onClick={() => tweenTo(frame(shownEras(), width()))}>
+        <button class="btn" onClick={() => tweenTo(frame(shownEras(), shownPosts(), width()))}>
           Fit
         </button>
         <label class="tl__rowh" title="Era row height">
@@ -785,6 +802,14 @@ const Timeline: Component<Props> = (props) => {
             )}
           </For>
         </div>
+
+        {/* future zone: subtle shade for everything after "now" */}
+        <Show when={todayX() < width()}>
+          <div
+            class="tl__future"
+            style={{ left: `${Math.max(0, todayX())}px`, top: `${RULER_H}px` }}
+          />
+        </Show>
 
         {/* today marker */}
         <Show when={todayX() >= 0 && todayX() <= width()}>

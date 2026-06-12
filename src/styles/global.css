@@ -458,6 +458,20 @@ a:hover {
   pointer-events: none;
 }
 
+/* Everything after "now" — a faint wash + hatch so the future reads as future. */
+.tl__future {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--accent) 7%, transparent) 0 6px,
+      transparent 6px 12px
+    );
+}
+
 .tl__era {
   position: absolute;
   left: 0;
